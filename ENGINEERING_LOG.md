@@ -314,7 +314,27 @@
   - `eslint` 校验 0 错误通过。
   - `compile_applet` 全量编译成功。
 
-## 2026-09-16 录屏预检查弹窗交互、BoardPreview 同一口径收口与孤儿模块系统清理
+## 2026-09-16 孤儿代码与废弃函数物理删除、prompt.js 规范对齐与结构优化
+- **目标**：响应用户指令，对比 `prompt.js` 规则集（1726×980 物理画布基准、自然板书排版、纯净 TTS 口播、四环教学法、李永乐风格），彻底物理删除 src 与 server 中零调用的孤儿文件、历史草稿及废弃换算函数，清理优化项目结构。
+- **改动**：
+  1. 彻底物理删除 7 个零引用孤岛代码文件/目录：
+     - `src/agent-b-v2/prompt-v3-draft.js`：已废弃的 V3 草稿系统提示词（与 prompt.js 规范冲突）。
+     - `src/agent-b-v2/skills/prompt-v3-draft/`（含 index.js）：已废弃草稿技能包装，同步在 `src/agent-b-v2/skills/index.js` 注册表中注销。
+     - `src/services/agentBKnowledge.js`：旧版 CSV 解析器（系统已全面切至 JSON 紧凑知识库）。
+     - `src/composables/useAsyncAction.js`：零调用异步状态机。
+     - `src/composables/useBoardCapture.js`：零调用截图函数（消除未使用的 eslint warning）。
+     - `src/utils/problemTypeClassifier.js`：零调用分类器（逻辑已内置于 Step1Entry 与 recognitionClient）。
+     - `src/board-tools/boardTypography.js`：零引用的字体配置 JS 代码（保留同目录 CSS 供样式使用）。
+     - `server/agentBV2ProxyPlugin.js`：历史重名未使用的孤儿 Vite 插件。
+  2. 废弃函数与历史换算常量物理清理：
+     - `src/utils/canvasCoords.js`：物理删除 `TABLE_REF_W`, `TABLE_REF_H`, `SCALE_X`, `SCALE_Y`, `ZONE_REF_PX`, `tablePxToCanvasPx`, `tablePxToPct`, `canvasPxToPct`, `zoneToPct`, `formatTablePx` 等 1892 历史表稿估算函数，仅保留 1726×980 绝对画布真源与网格生成器。
+     - `src/components/RealBoardPreview.vue`：清理未使用的 `TABLE_REF_W`, `TABLE_REF_H` 引用以及 `hover` 中的 `refX / refY` 废弃计算。
+     - `src/utils/mathText.js`：物理删除未引用的孤儿函数 `hasMathContent`。
+     - `src/utils/boardLayout.js`：清理未被外部引用的 `BOARD_SAFE_X_PCT`、`BOARD_BOTTOM_LIMIT_PCT` 等常量为内部普通变量。
+- **验证**：
+  - `lint_applet` 校验 0 错误（消除 useBoardCapture 未使用变量报警）。
+  - `compile_applet` 全量编译通过（`Build succeeded - the applet is compiled`）。
+
 - **目标**：
   1. 录屏交付按钮预检查拦截：题目识别或 TTS 音轨状态未就绪时弹出 Ant Design Modal 提示未就绪项并指引用户操作（遵循“系统放权，不绑死”提供直接录制通道）。
   2. BoardPreview 前端信息与出口口径收口：彻底消除冗余本地 MD 导出实现，统一复用 `src/lib/speechMarkdown.js` 标准导出器；清理历史表稿遗留参数，收拢至 1726×980 物理真画布标准。

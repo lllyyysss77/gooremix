@@ -5,8 +5,6 @@ import BoardContentLayer from './BoardContentLayer.vue'
 import {
   CANVAS_W as DESIGN_W,
   CANVAS_H as DESIGN_H,
-  TABLE_REF_W,
-  TABLE_REF_H,
 } from '../utils/canvasCoords'
 import { BOARD_FONT_SIZE } from '../services/stepHandoff.js'
 import { createBoardToolRuntime } from '../board-tools/boardToolCatalog.js'
@@ -153,8 +151,6 @@ function onMove(e) {
     yPct: yPct.toFixed(1),
     px,
     py,
-    refX: Math.round((px / DESIGN_W) * TABLE_REF_W),
-    refY: Math.round((py / DESIGN_H) * TABLE_REF_H),
   }
 }
 function onLeave() {

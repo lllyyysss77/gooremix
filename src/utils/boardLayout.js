@@ -4,11 +4,10 @@ import { CANVAS_W as DESIGN_W, CANVAS_H as DESIGN_H } from './canvasCoords.js'
 import { QUESTION_FONT_SIZE, BOARD_FONT_SIZE } from '../services/stepHandoff.js'
 export { DESIGN_W, DESIGN_H }
 
-/** @orphan [模块内部基准常量 - 零外部调用] */
-export const BOARD_SAFE_X_PCT = 6
-export const BOARD_RIGHT_LIMIT_PCT = 94
-export const BOARD_BOTTOM_LIMIT_PCT = 95
-export const BOARD_HORIZONTAL_GAP_PCT = 4
+const BOARD_SAFE_X_PCT = 6
+const BOARD_RIGHT_LIMIT_PCT = 94
+const BOARD_BOTTOM_LIMIT_PCT = 95
+const BOARD_HORIZONTAL_GAP_PCT = 4
 
 const SECTION_GAP_PCT = 2
 const LABEL_HEIGHT_PCT = (44 / DESIGN_H) * 100
