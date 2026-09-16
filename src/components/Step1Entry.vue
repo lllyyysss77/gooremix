@@ -332,8 +332,7 @@ function resetKnowledgeQuery() {
 
 function suggestFromText(text) {
   const raw = text || ''
-  // 暂定粗判断；夏夏后续会整理「题型分类库」再细接，避免 agent 乱判
-  // 夏夏：几何题特征一定有面积/长/宽/角度/边长等几何相关字眼
+  // 题型特征模式识别与侧重匹配：几何题核心特征（面积/周长/角度/边长等）
   const geometryHit =
     /梯形|平行四边形|矩形|正方形|菱形|三角|圆|扇形|几何|图形|如图|作图|证明|∠|°|底边|高|对角线|相似|全等|平行|垂直|面积|周长|体积|边长|长|宽|角度|求角|夹角|圆心角|半径|直径|弦|弧|面积是多少|边长是多少/.test(
       raw,
@@ -436,7 +435,7 @@ async function placeOnCanvas({ fromUpload = false } = {}) {
       knowledgeStatus.value = 'success'
     }
 
-    // 夏夏硬边界：纯文字题图归文本，不贴原图；只有识别为 has_diagram 才贴
+    // 图像贴图边界：纯文字题图归文本，不贴原图；只有识别为 has_diagram 才贴原图
     const imageKind = String(result.imageKind || '').toLowerCase()
     if (imageKind === 'text_only' || imageKind === 'text') {
       keepOriginal.value = false

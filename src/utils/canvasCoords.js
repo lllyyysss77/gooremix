@@ -1,8 +1,6 @@
 /**
  * 画布坐标
- * - 甲方真画布：1726 × 980（落最终画面）
- * - 夏夏表稿参考尺寸：1892 × 1044（表里写的像素坐标按此估算）
- * 换算：实际X = 表中X * 1726/1892；实际Y = 表中Y * 980/1044
+ * 物理真画布标准：1726 × 980（落最终画面）
  */
 // 画布尺寸唯一真源：src/services/stepHandoff.js 的 CANVAS_SIZE
 import { CANVAS_SIZE } from '../services/stepHandoff.js'

@@ -255,7 +255,7 @@ export function writeDeliverableFile(data) {
   // 1. 写入配套实体 JSON 归档文件
   writeFileSync(jsonFilePath, JSON.stringify(payload, null, 2), 'utf-8')
 
-  // 2. 写入同名落地实体 HTML 交付单页文件（夏夏核心需求：与 JSON 配对的一批归档物）
+  // 2. 写入同名落地实体 HTML 交付单页文件（与 JSON 配对的归档交付物）
   const htmlContent = renderDeliverableHtml(payload)
   writeFileSync(htmlFilePath, htmlContent, 'utf-8')
 

@@ -313,7 +313,7 @@ function renderBoardContent(board) {
   return result
 }
 
-// 列空间合理分配与自由折叠模式（夏夏专属：支持按需折叠每列，超大留白，杜绝劣质滑动条）
+// 列空间合理分配与自由折叠模式（支持按需折叠每列，超大留白，杜绝劣质滑动条）
 const layoutPreset = ref('standard') // 'standard' | 'speech_focus' | 'board_focus' | 'custom'
 const collapsedCols = ref({
   speech: false,
@@ -419,7 +419,7 @@ const totalActionCount = computed(() => {
   return rows.value.reduce((acc, r) => acc + (Array.isArray(r.actionSpec) ? r.actionSpec.length : 0), 0)
 })
 
-// 纯前端本地数学算式口播兜底秒级转换（夏夏双保险核心）
+// 纯前端本地数学算式口播兜底秒级转换（双保险核心）
 function runInstantMathAsrPolish() {
   if (!rows.value.length) {
     message.warning('请先生成五字段执行表后再进行 ASR 兜底转换')
@@ -2178,7 +2178,7 @@ function isRefineFieldEqual(original, refined) {
               @select-row="onSelectRowFromTimeline"
             />
 
-            <!-- 列空间合理分配与自由折叠工具条（夏夏专属） -->
+            <!-- 列空间合理分配与自由折叠工具条 -->
             <div class="studio-col-layout-bar">
               <div class="col-layout-left">
                 <span class="col-layout-label">分列布局:</span>
@@ -3806,7 +3806,7 @@ function isRefineFieldEqual(original, refined) {
   box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);
 }
 
-/* 列空间合理分配与自由折叠工具条（夏夏专属） */
+/* 列空间合理分配与自由折叠工具条 */
 .studio-col-layout-bar {
   display: flex;
   align-items: center;
@@ -5238,7 +5238,7 @@ function isRefineFieldEqual(original, refined) {
   background: #dcfce7 !important;
 }
 
-/* 夏夏简易版播放器按钮 */
+/* 极简轻量级播放器按钮 */
 .group-lite-player {
   display: flex;
   align-items: center;

@@ -299,7 +299,7 @@ button, input, textarea { font: inherit; }
   min-width: 0;
 }
 
-/* 夏夏极简半透明浅浅滑动条规范：针对 iframe、全局容器与 Ant Design 表格 */
+/* 极简半透明浅浅滑动条规范：针对 iframe、全局容器与 Ant Design 表格 */
 html, body, #app, .ant-table-body, .ant-table-content, .ant-table-container {
   scrollbar-width: thin;
   scrollbar-color: rgba(148, 163, 184, 0.16) transparent;

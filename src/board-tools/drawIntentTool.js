@@ -213,12 +213,12 @@ export function prepareDrawIntentAction(action, { resolveCanvas } = {}) {
 }
 
 /**
- * Agent 工具描述（注入 userPayload.availableBoardTools）
+ * Agent 工具描述（注入 handoff.availableBoardTools）
  */
 export function getDrawIntentAgentTool() {
   return {
     id: DRAW_INTENT_TOOL_ID,
-    purpose: '描述要画的内容 + 起手坐标 + 时长；intent 按固定顺序用分号分隔 key:value，Agent C 可直接解析执行',
+    purpose: '描述要画的内容 + 动作坐标 + 时长；intent 按固定顺序用分号分隔 key:value，可供下游绘图渲染层解析执行',
     actionSchema: {
       tool: DRAW_INTENT_TOOL_ID,
       region: '"analysis" | "solution" | "summary" — 对应环节（分析/解答/总结）',

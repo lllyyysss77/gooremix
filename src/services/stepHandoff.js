@@ -195,10 +195,10 @@ export function buildStep1Handoff(input = {}) {
       region: '区域：[左%, 上%, 宽%, 高%]，所有百分比最多保留 2 位小数',
       point: '起点/终点：[x%, y%]',
     },
-    example: '若分析区起手坐标为 (6%, 41%)，则动作点为 [6, 41]',
+    example: '若分析区动作锚点为 [6, 41]，则动作参考点为 [6, 41]',
   }
 
-  // 从 boardPlan 提取各区域起手坐标（落座标签 + 区域起点）
+  // 从 boardPlan 提取各区域定位锚点（落座标签 + 区域参考起点，板书由渲染层自然排版）
   const boardPlan = roundLayoutNumbers(input.boardPlan ? JSON.parse(JSON.stringify(input.boardPlan)) : null)
   const zoneAnchors = extractZoneAnchors(boardPlan, topicLayout)
 

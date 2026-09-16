@@ -15,7 +15,7 @@
   scrollbar-width: none;
 }
 
-/* 夏夏专属极简微质感滑动条：透明轨道 + 浅浅半透明滑块，告别劣质感系统厚滑条 */
+/* 极简微质感滑动条：透明轨道 + 浅浅半透明滑块，告别粗重原生滑条 */
 ::-webkit-scrollbar {
   width: 4px;
   height: 4px;
