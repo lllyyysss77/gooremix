@@ -234,6 +234,7 @@ export function validateRoughDrawingAction(action) {
   }
 }
 
+/** @orphan [零外部调用校验函数] */
 export function validateRoughDrawingRegion(action, bounds) {
   const result = validateRoughDrawingAction(action)
   if (!result.ok) return result

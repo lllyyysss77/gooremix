@@ -170,6 +170,7 @@ export function renderProblemHtml(text) {
   return renderDelimited(promoted)
 }
 
+/** @orphan [零外部调用辅助函数] */
 export function hasMathContent(text) {
   const raw = String(text || '')
   return LATEX_HINT.test(raw) || /\d+\/\d+/.test(raw)

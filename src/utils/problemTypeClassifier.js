@@ -1,4 +1,6 @@
 /**
+ * @orphan [零调用孤岛模块]
+ * 说明：题型判断目前已在 Step1Entry 与 recognitionClient 中自包含运行，本模块未被外部引用。
  * problemTypeClassifier — 统一题型判断 + 规范化
  * 消除 Step1Entry.suggestFromText 与 recognitionClient.normalizeType 的重复 regex
  *

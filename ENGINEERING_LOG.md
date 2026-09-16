@@ -314,26 +314,31 @@
   - `eslint` 校验 0 错误通过。
   - `compile_applet` 全量编译成功。
 
-## 2026-09-16 导出物规范说明参数补全与唯一真相源对齐
-- **目标**：响应用户对导出物说明参数的硬性要求，确保所有导出物（完整要素表 MD、分镜表 MD、产物 JSON / current.json）都包含来自 handoff 的画布参数、四区布局、UI 可调参数、题目全量信息与环节配比。
+## 2026-09-16 录屏预检查弹窗交互、BoardPreview 同一口径收口与孤儿模块系统清理
+- **目标**：
+  1. 录屏交付按钮预检查拦截：题目识别或 TTS 音轨状态未就绪时弹出 Ant Design Modal 提示未就绪项并指引用户操作（遵循“系统放权，不绑死”提供直接录制通道）。
+  2. BoardPreview 前端信息与出口口径收口：彻底消除冗余本地 MD 导出实现，统一复用 `src/lib/speechMarkdown.js` 标准导出器；清理历史表稿遗留参数，收拢至 1726×980 物理真画布标准。
+  3. 文案全面对齐 `prompt.js`：四环教学法、李永乐风格高毛料口播、达芬奇手稿风格板书规划。
+  4. 孤儿与废弃文件系统围剿：全面标记与隔离 `server/agentBV2ProxyPlugin.js`、`useAsyncAction.js`、`useBoardCapture.js`、`problemTypeClassifier.js`、`agentBKnowledge.js`、`prompt-v3-draft.js` 等零引用孤岛代码。
 - **改动**：
-  1. `src/lib/speechMarkdown.js`：
-     - 统一抽取 `buildStandardExplainParamsSection(meta)` 公共方法。
-     - 输出标准画布参数表（1726×980、百分比坐标、四区字号/字体/颜色/行高、板书速度、动作速度）。
-     - 输出四区布局表（题目区、分析区、解答区、总结区 x/y/w/h）。
-     - 输出 UI 可调参数表（坐标计算方式、题目字号 30px、题目字体、音频播放/预估 160字/分 策略说明）。
-     - 输出题目信息与环节配比（题目截图地址、题型、关联知识点、教学重点、关键公式、区域锚点、分析/解答/总结/开收场配比占比）。
-     - `buildElementsMarkdown` 与 `buildStoryboardMarkdown` 均注入该段落。
-  2. `src/agent-b-v2/AgentBDirect.vue`：
-     - `exportElements` 与 `exportStoryboard` 注入 handoff 题目全量信息（`relatedKnowledge`, `teachingFocus`, `keyFormulaList`, `zoneAnchors`, `stageRatioSuggestion`）。
-     - `serializeCurrentDeliverableState()` 在序列化根节点持久注入 `canvasParams`、`boardPlan`、`uiSettings`、`problemInfo`。
-  3. `server/deliverableStoreHandler.js`：
-     - `writeDeliverableFile` 保证落盘的实体 JSON 交付物及 current 指针包含完整的 `canvasParams`、`boardPlan`、`uiSettings`、`problemInfo`。
-  4. 接口规范文档与 Schema：
-     - 同步更新 `public/deliverable/DELIVERABLE_API_SPEC.md` 与 `doc/DELIVERABLE_API_SPEC.md` 的第 2 章交付物根级字段与全局说明参数。
+  1. `src/agent-b-v2/AgentBDirect.vue`：
+     - 新增 `handleRecordScreenPrecheck` 交互：检查题目文本/原图识别状态以及音频 TTS 准备情况；如有未就绪项，弹出 Modal 列表清晰指引，同时提供“去识别题目”、“全部合成语音”及“仍然直接录制”选项。
+  2. `src/board-preview/BoardPreviewApp.vue`：
+     - 引入 `src/lib/speechMarkdown.js` 标准导出方法，消除重复实现的简陋 markdown 逻辑。
+     - 修复 `row.board` 为对象或缺少内容时的渲染异常，引入 `formatBoardDisplay` 容错。
+     - 画布坐标参考统一收口为 1726×980 规范，更新标签卡与规格提示文案为“真画布四大区域与规格规划”与“达芬奇手稿风格”。
+  3. `src/components/RealBoardPreview.vue`：
+     - 清除浮层中的 `· 表约(X, Y)` 历史遗留估算坐标，纯粹展示 `画布: (X, Y)px · (X%, Y%)` 真实数据。
+  4. 孤儿文件全面标注与隔离：
+     - `server/agentBV2ProxyPlugin.js`：标注为未引用的重名孤儿插件（真实插件位于 `server/agentBV2Handler.js`）。
+     - `src/composables/useAsyncAction.js` & `src/composables/useBoardCapture.js`：标注为零调用孤岛模块。
+     - `src/utils/problemTypeClassifier.js`：标注为零调用孤岛模块。
+     - `src/services/agentBKnowledge.js`：标注为遗留 CSV 解析器（系统已全面切到 JSON 知识库）。
+     - `src/agent-b-v2/prompt-v3-draft.js` & `src/agent-b-v2/skills/prompt-v3-draft/index.js`：标注为历史草稿。
+     - `src/board-tools/boardTypography.js` & `src/utils/canvasCoords.js`：标注未被消费的旧参考常量。
+  5. 提示词与风格选择器文案对齐：
+     - `src/agent-b-v2/skills/default-fallback/index.js`：对齐命名为“系统标准（prompt.js 规范 · 四环教学法）”。
 - **验证**：
-  - Node 独立单元脚本测试 `buildElementsMarkdown` 和 `buildStoryboardMarkdown` 格式与内容完整匹配。
-  - Node 测试 `writeDeliverableFile` 和 `readCurrentDeliverable`，验证 `current.json` 根字段与交付物结构。
-  - `compile_applet` 编译成功（0 errors）。
-  - `lint_applet` 验证无语法/编译错误。
+  - `lint_applet` 通过（0 errors）。
+  - `compile_applet` 全量编译通过，静态资源与 HTML 入口构建正常。
 

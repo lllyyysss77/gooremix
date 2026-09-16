@@ -1,4 +1,6 @@
 /**
+ * @orphan [零调用孤岛模块]
+ * 说明：暂未被 Step1Entry 或 AgentBDirect 接入，保留以供未来统一异步操作状态机重构使用。
  * useAsyncAction — 统一异步操作状态机
  * 消除 Step1Entry + AgentBDirect 中重复的 state/errorText/message.error 模式
  */

@@ -1,4 +1,7 @@
-/* @qh-core LANE=B-V2 POINT=API_PROXY /api/agent-b-v2/generate inject prompt+preview
+/* @orphan [已废弃孤儿文件]
+ * 说明：真实生效的 Vite 插件位于 server/agentBV2Handler.js 中的 agentBV2ProxyPlugin。
+ * 本文件属于历史遗留重名孤儿文件，未被 vite.config.js 或任何服务引用。
+ * @qh-core LANE=B-V2 POINT=API_PROXY /api/agent-b-v2/generate inject prompt+preview
  * 注意：本代理不再读取 .env 中的 API Key。
  * apiKey / endpoint / model 全部由前端用户填写后随请求体传入。
  */

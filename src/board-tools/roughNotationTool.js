@@ -69,6 +69,7 @@ function targetRects(element, multiline) {
   return [element.getBoundingClientRect()]
 }
 
+/** @orphan [零外部调用估算函数] */
 export function estimateMarkDurationMs(element, { multiline = false } = {}) {
   const target = requireElement(element)
   const rects = targetRects(target, multiline)

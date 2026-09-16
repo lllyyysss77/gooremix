@@ -9,13 +9,19 @@ import { CANVAS_SIZE } from '../services/stepHandoff.js'
 
 export const CANVAS_W = CANVAS_SIZE.width
 export const CANVAS_H = CANVAS_SIZE.height
+export const BOARD_DESIGN_SIZE = Object.freeze({ width: CANVAS_W, height: CANVAS_H })
+
+/**
+ * @orphan @deprecated-ref [历史表稿参考常量]
+ * 说明：以下 1892×1044 换算常量属于早期草稿规格，现已全面收拢至 1726×980 绝对真画布标准。
+ * 保留仅用于向下兼容旧测试数据，禁止在新模块中使用。
+ */
 export const TABLE_REF_W = 1892
 export const TABLE_REF_H = 1044
 export const SCALE_X = CANVAS_W / TABLE_REF_W
 export const SCALE_Y = CANVAS_H / TABLE_REF_H
-export const BOARD_DESIGN_SIZE = Object.freeze({ width: CANVAS_W, height: CANVAS_H })
 
-/** 夏夏表稿分区（参考 1892×1044 像素） */
+/** 夏夏表稿分区（参考 1892×1044 像素，已废弃） */
 export const ZONE_REF_PX = {
   topic: { name: '题目区', x1: 120, x2: 900, y1: 160, y2: 240 },
   analysis: { name: '分析区', x1: 120, x2: 900, y1: 300, y2: 760 },

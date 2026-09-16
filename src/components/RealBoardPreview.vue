@@ -235,8 +235,7 @@ function onClick() {
       <div class="board-layer board-layer-l4" data-board-layer="L4" aria-hidden="true" />
 
       <div v-if="hover" class="hover-readout">
-        画布({{ hover.px }},{{ hover.py }})px / ({{ hover.xPct }},{{ hover.yPct }})%
-        · 表约({{ hover.refX }},{{ hover.refY }})
+        画布: ({{ hover.px }}, {{ hover.py }})px · ({{ hover.xPct }}%, {{ hover.yPct }}%)
         <span class="hint">点击复制</span>
       </div>
     </div>

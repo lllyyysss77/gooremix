@@ -1,3 +1,8 @@
+/**
+ * @orphan [无外部消费者 - 仅同名 CSS 被引入]
+ * 说明：当前字体字号规范唯一真源已收拢至 src/services/stepHandoff.js。
+ * 本文件中的 JS 常量与辅助函数暂无外部消费者，同目录的 boardTypography.css 在 main.js 中被引入。
+ */
 import { loadCssWithFallback } from '../utils/cdnLoader.js'
 
 export const BOARD_TYPOGRAPHY_STORAGE_KEY = 'qinghuabu.boardTypography.v1'

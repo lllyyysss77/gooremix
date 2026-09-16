@@ -1,4 +1,8 @@
-/* @qh-core LANE=B-V2 POINT=SYSTEM_PROMPT Agent B drafts five-column rows */
+/* @orphan @deprecated-draft
+ * 说明：历史遗留 V3 草稿提示词，未正式接入生产流水线。
+ * 当前生效提示词唯一真源：src/agent-b-v2/prompt.js。
+ * @qh-core LANE=B-V2 POINT=SYSTEM_PROMPT Agent B drafts five-column rows
+ */
 
 export const AGENT_B_V2_SYSTEM_PROMPT = `
 

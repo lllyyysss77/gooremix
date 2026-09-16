@@ -1,3 +1,7 @@
+/**
+ * @orphan [历史遗留孤岛模块 - 倾向废弃]
+ * 说明：旧版 CSV 关联知识解析器。当前链路已全量使用 JSON 格式知识库 (docReferences.js / knowledge-a.compact.json)。
+ */
 import KNOWLEDGE_CSV from '../../doc/小学数学讲解视频生成工作台_6、关联知识表.csv?raw'
 
 const KNOWLEDGE_FIELDS = [

@@ -21,6 +21,7 @@ Agent B 的运行时输入收敛为核心合同、`doc/speech-board-guide.md`、
 Agent B 实链审查已修复：板书数学软校验改查真实 `board` 字段；Check 保留现有 duration；服务端按题型传递几何合同校验；B 页面补回 `notes` 列；每行口播新增手动语音合成喇叭、重新生成、本地持久化与记录下载 URL。
 Agent B 后续压实：Agent A 到 B handoff 过滤文本字段，彻底停止向 B 发送原图、Base64 或画布快照；用户修改口播或环节后立即重算时间线；缺少真画布预览时给用户可见降级提示。
 Agent B 提示真相已收敛：系统 Prompt 支持 Skill 动态加载与自定义注入；`prompt.js` 保留核心合同；口播和板书方法收敛至 `speech-board-guide.md`；机器合同负责工具 schema、全局 order 和输出字段。
+BoardPreview 与交付物收口压实：录屏前置弹窗预检查拦截未就绪项并放权放行；BoardPreview 全量复用 `speechMarkdown.js` 标准导出，板书呈现增加格式容错，四区基准统一收拢至 1726×980 达芬奇手稿风格；孤儿模块已完成全量标注与物理隔离。
 
 ## 业务边界
 

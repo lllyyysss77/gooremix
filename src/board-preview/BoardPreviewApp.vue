@@ -38,6 +38,10 @@ import {
 import { BOARD_LAYOUT } from '../utils/boardLayout.js'
 import { renderProblemHtml } from '../utils/mathText.js'
 import {
+  exportSpeechMarkdown as doExportSpeechMarkdown,
+  exportElementsMarkdown as doExportElementsMarkdown,
+} from '../lib/speechMarkdown.js'
+import {
   isLiveBoardPreviewUpdate,
   loadLiveBoardPreview,
   saveLiveBoardPreview,
@@ -305,12 +309,20 @@ const fourZonesCoords = computed(() => {
   }
 
   return [
-    { key: 'topic', name: '题目区 (Topic)', tag: '题', label: '题目', ...toPx(q), desc: '承载题目文本与原图锚定' },
-    { key: 'analysis', name: '分析区 (Analysis)', tag: '析', label: '分析', ...toPx(an), desc: '引导审题思路与关系拆解' },
-    { key: 'solution', name: '解答区 (Solution)', tag: '解', label: '解答', ...toPx(so), desc: '核心规范算式与步骤推导' },
-    { key: 'summary', name: '总结区 (Summary)', tag: '答', label: '答题', ...toPx(sm), desc: '作答闭环与方法结论沉淀' },
+    { key: 'topic', name: '题目区 (Topic/Question)', tag: '题', label: '题目', ...toPx(q), desc: '承载题目文本与原图锚定（30px 微软雅黑，印刷体）' },
+    { key: 'analysis', name: '分析区 (Analysis)', tag: '析', label: '分析', ...toPx(an), desc: '引导审题思路与关系拆解（约 35px 手写尖尖体 LikeJianJianTi）' },
+    { key: 'solution', name: '解答区 (Solution)', tag: '解', label: '解答', ...toPx(so), desc: '核心规范算式与步骤推导（约 35px 手写尖尖体 LikeJianJianTi）' },
+    { key: 'summary', name: '总结区 (Summary)', tag: '总', label: '总结', ...toPx(sm), desc: '作答闭环与方法结论沉淀（约 35px 手写尖尖体 LikeJianJianTi）' },
   ]
 })
+
+// 板书显示安全格式化（防止 [object Object]）
+function formatBoardDisplay(board) {
+  if (!board) return '(本步无新增板书)'
+  if (typeof board === 'string') return board
+  if (typeof board === 'object') return board.content || '(本步无新增板书)'
+  return String(board)
+}
 
 // 格式化的下游视频流水线 JSON
 const pipelineJsonString = computed(() => {
@@ -380,39 +392,21 @@ function copyPageUrl() {
 }
 
 function exportSpeechMarkdown() {
-  let md = `# 教学口播稿 · 视频素材\n`
-  md += `> 交付编号：${projectCode.value || '最新'}  |  预估时长：${stats.value.totalDurationText || '未计算'}\n\n`
-  rows.value.forEach((r, idx) => {
-    md += `### 第${idx + 1}步 · 【${r.stage}】 (${r.duration})\n`
-    md += `${r.speech}\n\n`
+  doExportSpeechMarkdown(rows.value, {
+    problemText: problemText.value,
   })
-  const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `speech-${projectCode.value || 'export'}.md`
-  a.click()
-  URL.revokeObjectURL(url)
-  message.success('已导出口播讲义 MD')
+  message.success('已导出口播讲义 MD (纯口播/TTS就绪/无控制标签)')
 }
 
 function exportElementsMarkdown() {
-  let md = `# 教学板书五字段要素全量表\n`
-  md += `> 编号：${projectCode.value || '最新'}  |  生成时间：${createdAt.value || new Date().toLocaleString()}\n\n`
-  md += `| 步数 | 阶段 | 时长 | 口播文本 (Speech) | 板书内容 (Board) |\n`
-  md += `| :--- | :--- | :--- | :--- | :--- |\n`
-  rows.value.forEach((r, idx) => {
-    const cleanSpeech = (r.speech || '').replace(/\|/g, '\\|').replace(/\n/g, ' ')
-    const cleanBoard = (r.board || '').replace(/\|/g, '\\|').replace(/\n/g, ' ')
-    md += `| ${idx + 1} | ${r.stage} | ${r.duration} | ${cleanSpeech} | ${cleanBoard} |\n`
+  doExportElementsMarkdown(rows.value, {
+    title: '讲题五字段要素全量表',
+    problemText: problemText.value,
+    model: meta.value?.model,
+    generatedAt: createdAt.value,
+    handoffCanvasParams: meta.value?.canvasParams,
+    handoffBoardPlan: boardPlan.value,
   })
-  const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `elements-${projectCode.value || 'export'}.md`
-  a.click()
-  URL.revokeObjectURL(url)
   message.success('已导出五字段要素表 MD')
 }
 
@@ -854,7 +848,7 @@ function getStageTagColor(stage) {
                 :class="{ active: activeTab === 'coords' }"
                 @click="activeTab = 'coords'"
               >
-                <CompassOutlined /> 真画布四大区域与落点坐标
+                <CompassOutlined /> 真画布四大区域与规格规划
               </button>
               <button
                 class="tab-nav-btn"
@@ -878,7 +872,7 @@ function getStageTagColor(stage) {
                   </a-select-option>
                 </a-select>
                 <a-button size="small" @click="exportSpeechMarkdown">
-                  <template #icon><DownloadOutlined /></template>导出口播 MD
+                  <template #icon><DownloadOutlined /></template>导出口播 MD (TTS就绪)
                 </a-button>
                 <a-button size="small" @click="exportElementsMarkdown">
                   <template #icon><DownloadOutlined /></template>导出要素表 MD
@@ -886,7 +880,7 @@ function getStageTagColor(stage) {
               </template>
 
               <template v-if="activeTab === 'coords'">
-                <span class="spec-hint-badge">基准换算: 1726×980 ↔ 1892×1044 (16:9)</span>
+                <span class="spec-hint-badge">画布物理基准: 1726 × 980 (16:9 课件演播室)</span>
               </template>
 
               <template v-if="activeTab === 'json'">
@@ -930,7 +924,7 @@ function getStageTagColor(stage) {
                     <td class="col-board">
                       <div class="board-snippet">
                         <span class="snippet-label">板书:</span>
-                        <span class="board-text">{{ row.board || '(本步无新增板书)' }}</span>
+                        <span class="board-text">{{ formatBoardDisplay(row.board) }}</span>
                       </div>
                       <div v-if="row.actionSpec && row.actionSpec.length" class="actions-badge-list">
                         <span
@@ -969,7 +963,7 @@ function getStageTagColor(stage) {
               <!-- 右侧：四区规格与百分比绝对值对照表 -->
               <div class="coords-card zones-table-card">
                 <div class="card-sub-header">
-                  <span class="sub-title">🎯 四大区域坐标规格参数 (1726 × 980)</span>
+                  <span class="sub-title">🎯 四大区域规划参数 (1726 × 980 · 达芬奇手稿风格)</span>
                 </div>
                 <table class="zones-data-table">
                   <thead>

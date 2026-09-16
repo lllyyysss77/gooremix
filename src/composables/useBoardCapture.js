@@ -1,4 +1,6 @@
 /**
+ * @orphan [零调用孤岛模块]
+ * 说明：当前截图逻辑在 Step1Entry 与 RealBoardPreview 中已有原生轻量实现，本模块零调用。
  * useBoardCapture — 真画布截图 composable（统一使用 window.snapdom）
  * Step1 / Step2 / AgentBDirect 共用此入口，禁止各自引用第三方截图库
  */
