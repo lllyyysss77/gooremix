@@ -245,10 +245,10 @@ function onBlockClick(index) {
 
 <style scoped>
 .visual-timeline-root {
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  padding: 12px 14px 10px;
+  background: var(--surface, #fffdf7);
+  border: 1px solid var(--line, #d7ded5);
+  border-radius: var(--card-radius, 18px);
+  padding: 14px 16px 12px;
   margin-bottom: 14px;
   box-shadow: var(--card-shadow);
 }
@@ -260,27 +260,27 @@ function onBlockClick(index) {
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 10px;
-  padding-bottom: 10px;
-  border-bottom: 1px solid #f1f5f9;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line, #d7ded5);
 }
 
 .timeline-title-area {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 .timeline-main-icon {
-  font-size: 16px;
+  font-size: 18px;
 }
 .timeline-title {
-  font-size: 13.5px;
-  font-weight: 700;
-  color: #0f172a;
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--ink-deep, #163b3d);
   letter-spacing: 0.2px;
 }
 .timeline-subtitle {
-  font-size: 11px;
-  color: #64748b;
+  font-size: 11.5px;
+  color: var(--muted, #708786);
   margin-left: 4px;
 }
 
@@ -294,15 +294,15 @@ function onBlockClick(index) {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  padding: 3px 8px;
-  border-radius: 6px;
-  font-size: 11px;
-  color: #475569;
+  background: var(--surface-soft, #edf7f0);
+  border: 1px solid var(--line, #d7ded5);
+  padding: 3px 10px;
+  border-radius: 9999px;
+  font-size: 11.5px;
+  color: var(--ink, #31595a);
 }
 .summary-pill strong {
-  color: #1e293b;
+  color: var(--ink-deep, #163b3d);
   font-family: monospace;
 }
 .pill-dot {
@@ -310,17 +310,17 @@ function onBlockClick(index) {
   height: 6px;
   border-radius: 50%;
 }
-.total-dot { background: #3b82f6; }
-.audio-dot { background: #10b981; }
-.board-dot { background: #f59e0b; }
+.total-dot { background: var(--blue, #5c88b8); }
+.audio-dot { background: var(--positive, #16856f); }
+.board-dot { background: var(--warning, #9a6a18); }
 
 /* 图例 */
 .timeline-legend {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 11px;
-  color: #64748b;
+  font-size: 11.5px;
+  color: var(--muted, #708786);
 }
 .legend-item {
   display: inline-flex;
@@ -330,34 +330,34 @@ function onBlockClick(index) {
 .legend-badge {
   width: 8px;
   height: 8px;
-  border-radius: 2px;
+  border-radius: 50%;
 }
-.legend-badge.stage-question { background: #0ea5e9; }
-.legend-badge.stage-analysis { background: #f59e0b; }
-.legend-badge.stage-solution { background: #10b981; }
-.legend-badge.stage-summary { background: #8b5cf6; }
+.legend-badge.stage-question { background: var(--blue, #5c88b8); }
+.legend-badge.stage-analysis { background: var(--sun, #f6c95f); }
+.legend-badge.stage-solution { background: var(--positive, #16856f); }
+.legend-badge.stage-summary { background: var(--danger, #d95f5f); }
 .legend-divider {
-  color: #cbd5e1;
+  color: var(--line, #d7ded5);
 }
 
 /* 核心时间轴轨道容器 (支持左右平滑滚动) */
 .timeline-track-container {
   overflow-x: auto;
-  padding-top: 10px;
-  padding-bottom: 4px;
+  padding-top: 12px;
+  padding-bottom: 6px;
   scrollbar-width: thin;
 }
 .timeline-track-container::-webkit-scrollbar {
   height: 6px;
 }
 .timeline-track-container::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: var(--line-strong, #b9cdc5);
   border-radius: 3px;
 }
 
 .timeline-track {
   display: flex;
-  gap: 10px;
+  gap: 12px;
   align-items: stretch;
   min-width: 100%;
 }
@@ -365,13 +365,13 @@ function onBlockClick(index) {
 /* 单个 Row 组映射的独立区块 */
 .timeline-row-block {
   flex: 1 0 auto;
-  background: #ffffff;
-  border: 1.5px solid #e2e8f0;
-  border-radius: 8px;
-  padding: 8px 10px 8px;
+  background: var(--surface, #fffdf7);
+  border: 1.5px solid var(--line, #d7ded5);
+  border-radius: var(--control-radius, 12px);
+  padding: 10px 12px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
   cursor: pointer;
   transition: all 0.18s ease;
   user-select: none;
@@ -380,21 +380,21 @@ function onBlockClick(index) {
 
 .timeline-row-block:hover {
   transform: translateY(-2px);
-  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.08);
-  border-color: #94a3b8;
+  box-shadow: 0 6px 16px rgba(22, 59, 61, 0.08);
+  border-color: var(--brand, #16856f);
 }
 
 .timeline-row-block.is-active {
-  border-color: #2563eb !important;
-  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2), 0 4px 12px rgba(37, 99, 235, 0.12);
-  background: #f8faff;
+  border-color: var(--brand, #16856f) !important;
+  box-shadow: 0 0 0 2px rgba(22, 133, 111, 0.2), 0 6px 18px rgba(22, 133, 111, 0.15);
+  background: var(--surface-soft, #edf7f0);
 }
 
 /* 环节主题特色色彩边框 */
-.stage-theme-题目 { border-top: 3px solid #0ea5e9; }
-.stage-theme-分析 { border-top: 3px solid #f59e0b; }
-.stage-theme-解答 { border-top: 3px solid #10b981; }
-.stage-theme-总结 { border-top: 3px solid #8b5cf6; }
+.stage-theme-题目 { border-top: 3.5px solid var(--blue, #5c88b8); }
+.stage-theme-分析 { border-top: 3.5px solid var(--sun, #f6c95f); }
+.stage-theme-解答 { border-top: 3.5px solid var(--positive, #16856f); }
+.stage-theme-总结 { border-top: 3.5px solid var(--danger, #d95f5f); }
 
 /* 块顶部条 */
 .block-top-bar {
@@ -403,42 +403,42 @@ function onBlockClick(index) {
   justify-content: space-between;
 }
 .block-index-badge {
-  font-size: 11.5px;
-  font-weight: 700;
-  color: #1e293b;
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--ink-deep, #163b3d);
 }
 .block-stage-pill {
-  font-size: 10.5px;
-  padding: 1px 6px;
-  border-radius: 4px;
-  font-weight: 600;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  font-weight: 700;
 }
-.block-stage-pill.stage-题目 { background: #e0f2fe; color: #0284c7; }
-.block-stage-pill.stage-分析 { background: #fef3c7; color: #b45309; }
-.block-stage-pill.stage-解答 { background: #d1fae5; color: #047857; }
-.block-stage-pill.stage-总结 { background: #ede9fe; color: #6d28d9; }
+.block-stage-pill.stage-题目 { background: var(--blue-pale, #e8f1fa); color: var(--blue, #5c88b8); }
+.block-stage-pill.stage-分析 { background: var(--sun-pale, #fff2c7); color: var(--warning, #9a6a18); }
+.block-stage-pill.stage-解答 { background: var(--positive-pale, #dff4ea); color: var(--positive-strong, #116b5b); }
+.block-stage-pill.stage-总结 { background: var(--danger-pale, #ffe7e1); color: var(--danger, #d95f5f); }
 
 /* 指标行 */
 .block-metric-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: #f8fafc;
-  padding: 4px 7px;
-  border-radius: 5px;
+  background: var(--surface-soft, #edf7f0);
+  padding: 4px 8px;
+  border-radius: 8px;
   font-size: 11px;
 }
 .audio-row {
-  background: #f0fdf4;
-  border: 1px solid #dcfce7;
+  background: var(--positive-pale, #dff4ea);
+  border: 1px solid var(--line-strong, #b9cdc5);
 }
 .offset-row {
-  background: #fffbeb;
-  border: 1px solid #fef3c7;
+  background: var(--sun-pale, #fff2c7);
+  border: 1px solid #fae69e;
 }
 .no-board-offset {
-  background: #f8fafc;
-  border: 1px solid #f1f5f9;
+  background: var(--surface-soft, #edf7f0);
+  border: 1px solid var(--line, #d7ded5);
   opacity: 0.8;
 }
 

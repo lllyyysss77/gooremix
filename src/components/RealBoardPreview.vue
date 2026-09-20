@@ -247,9 +247,10 @@ function onClick() {
   aspect-ratio: 1726 / 980;
   margin: 0 auto;
   overflow: hidden;
-  border: 1px solid #9ccfd9;
-  background: transparent;
-  box-shadow: 0 10px 28px rgba(24, 40, 42, 0.12);
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 6px;
+  background: #ffffff;
+  box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.08), 0 1px 3px rgba(15, 23, 42, 0.04);
   user-select: none;
 }
 .board.interactive { cursor: crosshair; }

@@ -16,7 +16,10 @@ const emit = defineEmits(['back'])
       <a-button v-if="showBack" type="text" title="返回上一步" class="qh-back-btn" @click="emit('back')">
         <template #icon><ArrowLeftOutlined /></template>
       </a-button>
-      <span class="qh-brand-mark">教学板书</span>
+      <div class="qh-brand-mark">
+        <span class="qh-brand-icon">✏️</span>
+        <span>教学板书</span>
+      </div>
       <span class="qh-step-badge">{{ stepLabel }}</span>
       <span class="qh-header-subtitle">{{ subtitle }}</span>
     </div>
