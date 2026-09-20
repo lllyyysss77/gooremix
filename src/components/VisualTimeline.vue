@@ -152,19 +152,46 @@ function getDuration(row) {
   return Math.max(2.5, Number((textLen / 2.8).toFixed(1)))
 }
 
-// 提取板书内容是否存在
+// 提取板书内容是否存在（全面兼容 boards 数组与 board 对象/字符串）
 function hasBoard(row) {
-  if (!row.board) return false
-  if (typeof row.board === 'string') return Boolean(row.board.trim())
-  const content = row.board.content || ''
-  return Boolean(content.trim())
+  const target = row.board ?? row.boards ?? row.boardSlice ?? null
+  if (!target) return false
+  if (typeof target === 'string') return Boolean(target.trim())
+  if (Array.isArray(target)) {
+    return target.some(item => {
+      if (!item) return false
+      if (typeof item === 'string') return Boolean(item.trim())
+      const c = item.content || item.text || item.boardSlice || item.boardText || ''
+      return Boolean(c.trim())
+    })
+  }
+  if (typeof target === 'object') {
+    const content = target.content || target.text || target.boardSlice || target.boardText || ''
+    return Boolean(content.trim())
+  }
+  return false
 }
 
-// 提取 board.startDelay（单位：秒）
+// 提取 board.startDelay（单位：秒，全面兼容 boards 数组与 board 对象）
 function getStartDelay(row) {
   if (!hasBoard(row)) return 0
-  const board = row.board
-  if (board && typeof board === 'object') {
+  const board = row.board ?? row.boards ?? row.boardSlice
+  if (Array.isArray(board)) {
+    for (const item of board) {
+      if (item && typeof item === 'object') {
+        if (typeof item.startDelay === 'number' && Number.isFinite(item.startDelay) && item.startDelay >= 0) {
+          return Number(item.startDelay.toFixed(1))
+        }
+        if (typeof item.startDelay === 'string') {
+          const m = item.startDelay.match(/[\d.]+/)
+          if (m) {
+            const val = parseFloat(m[0])
+            if (Number.isFinite(val) && val >= 0) return Number(val.toFixed(1))
+          }
+        }
+      }
+    }
+  } else if (board && typeof board === 'object') {
     if (typeof board.startDelay === 'number' && Number.isFinite(board.startDelay) && board.startDelay >= 0) {
       return Number(board.startDelay.toFixed(1))
     }

@@ -81,16 +81,21 @@ function parseCheckResponse(text, originalRows) {
     origIdx++
   }
 
-  const rows = parsed.rows.map((row) => ({
-    stage: row?.stage || '',
-    speech: typeof row?.speech === 'string' ? row.speech : '',
-    board: row?.board !== undefined && row?.board !== null
-      ? normalizeBoard(row.board)
-      : '',
-    actionSpec: Array.isArray(row?.actionSpec)
-      ? normalizeAgentBV2ActionSpec(row.actionSpec)
-      : [],
-  }))
+  const rows = parsed.rows.map((row, index) => {
+    const orig = originalRows[index]
+    const normalizedBoard = normalizeBoard(row?.board ?? row?.boards, row)
+    const fallbackBoard = normalizeBoard(orig?.board ?? orig?.boards, orig)
+    const finalBoard = (normalizedBoard && normalizedBoard.content) ? normalizedBoard : fallbackBoard
+    return {
+      stage: row?.stage || orig?.stage || '',
+      speech: typeof row?.speech === 'string' ? row.speech : (orig?.speech || ''),
+      board: finalBoard,
+      boards: Array.isArray(row?.boards) ? row.boards : (Array.isArray(orig?.boards) ? orig.boards : [finalBoard]),
+      actionSpec: Array.isArray(row?.actionSpec)
+        ? normalizeAgentBV2ActionSpec(row.actionSpec)
+        : (Array.isArray(orig?.actionSpec) ? orig.actionSpec : []),
+    }
+  })
 
   // 生成 changes 报告
   const reportedChanges = (Array.isArray(parsed.changes) ? parsed.changes : [])

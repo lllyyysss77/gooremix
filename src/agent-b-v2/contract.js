@@ -38,30 +38,136 @@ function normalizeStage(stage, index) {
   return fallback
 }
 
-// board 双兼容：读取历史 v1/v2 坐标，但新合同不再输出板书起手坐标。
+// 统一板书读取口：遵循「boards 优先、board 兜底」原则。
+// 既支持传入完整的 row 对象，也支持传入单独的 board / boards 原始值。
+export function getBoardFromRow(rowOrBoard) {
+  if (rowOrBoard == null) return { content: '', startDelay: 0 }
+
+  // 如果传入的是 row 对象
+  if (isRecord(rowOrBoard) && (rowOrBoard.boards !== undefined || rowOrBoard.board !== undefined || rowOrBoard.boardSlice !== undefined || rowOrBoard.stage !== undefined || rowOrBoard.speech !== undefined)) {
+    // 严格遵循「boards 优先、board 兜底」
+    const target = (rowOrBoard.boards !== undefined && rowOrBoard.boards !== null)
+      ? rowOrBoard.boards
+      : ((rowOrBoard.board !== undefined && rowOrBoard.board !== null)
+        ? rowOrBoard.board
+        : (rowOrBoard.boardSlice ?? rowOrBoard.boardText ?? null))
+    return normalizeBoard(target, rowOrBoard)
+  }
+
+  // 如果传入的是单独的 board / boards 变量
+  return normalizeBoard(rowOrBoard)
+}
+
+// 统一提取板书文本内容（纯字符串），空板书返回空字符串
+export function getBoardContent(rowOrBoard) {
+  return getBoardFromRow(rowOrBoard).content || ''
+}
+
+// 统一提取板书数组格式（新契约 boards 数组），供需要数组的下游消费
+export function getBoardArray(rowOrBoard) {
+  if (rowOrBoard == null) return []
+  if (isRecord(rowOrBoard) && rowOrBoard.boards !== undefined) {
+    if (Array.isArray(rowOrBoard.boards)) return rowOrBoard.boards
+  }
+  if (isRecord(rowOrBoard) && rowOrBoard.board !== undefined) {
+    if (Array.isArray(rowOrBoard.board)) return rowOrBoard.board
+    if (rowOrBoard.board) return [rowOrBoard.board]
+  }
+  if (Array.isArray(rowOrBoard)) return rowOrBoard
+  const norm = getBoardFromRow(rowOrBoard)
+  return norm.content ? [norm] : []
+}
+
+// board/boards 双兼容：全面支持单对象、数组（新契约 boards 数组）、字符串以及历史坐标剥离。
 // startDelay 暂保留为兼容的时间字段；具体排版由渲染层负责。
-export function normalizeBoard(board) {
-  if (isRecord(board)) {
+export function normalizeBoard(board, row = null) {
+  // 如果 board 为空，尝试从 row 对象的备选字段提取（如 boards, boardSlice, boardText）
+  let target = board
+  if (target == null && row && typeof row === 'object') {
+    target = row.boards ?? row.boardSlice ?? row.board_slice ?? row.boardText ?? null
+  }
+
+  // 1. 如果是数组格式（新契约 boards 数组，或模型返回的 board 数组）
+  if (Array.isArray(target)) {
     let startDelay = 0
-    if (typeof board.startDelay === 'number' && Number.isFinite(board.startDelay) && board.startDelay >= 0) {
-      startDelay = Number(board.startDelay.toFixed(2))
-    } else if (typeof board.startDelay === 'string') {
-      const match = board.startDelay.match(/[\d.]+/)
+    let hasDelay = false
+    const contentParts = []
+
+    for (const item of target) {
+      if (item == null) continue
+      if (typeof item === 'string') {
+        const trimmed = item.trim()
+        if (trimmed) contentParts.push(trimmed)
+      } else if (typeof item === 'object') {
+        const itemContent = typeof item.content === 'string'
+          ? item.content
+          : (typeof item.text === 'string'
+            ? item.text
+            : (typeof item.boardSlice === 'string'
+              ? item.boardSlice
+              : (typeof item.boardText === 'string' ? item.boardText : '')))
+        if (itemContent && itemContent.trim()) {
+          contentParts.push(itemContent.trim())
+        }
+        if (!hasDelay) {
+          if (typeof item.startDelay === 'number' && Number.isFinite(item.startDelay) && item.startDelay >= 0) {
+            startDelay = Number(item.startDelay.toFixed(2))
+            hasDelay = true
+          } else if (typeof item.startDelay === 'string') {
+            const match = item.startDelay.match(/[\d.]+/)
+            if (match) {
+              const val = parseFloat(match[0])
+              if (Number.isFinite(val) && val >= 0) {
+                startDelay = Number(val.toFixed(2))
+                hasDelay = true
+              }
+            }
+          }
+        }
+      }
+    }
+
+    return {
+      content: contentParts.join('\n'),
+      startDelay,
+    }
+  }
+
+  // 2. 如果是普通对象
+  if (isRecord(target)) {
+    let startDelay = 0
+    if (typeof target.startDelay === 'number' && Number.isFinite(target.startDelay) && target.startDelay >= 0) {
+      startDelay = Number(target.startDelay.toFixed(2))
+    } else if (typeof target.startDelay === 'string') {
+      const match = target.startDelay.match(/[\d.]+/)
       if (match) {
         const val = parseFloat(match[0])
         if (Number.isFinite(val) && val >= 0) startDelay = Number(val.toFixed(2))
       }
     }
+
+    // 尝试提取各种可能的文本字段，防止 content/text 键名偏差
+    const content = typeof target.content === 'string'
+      ? target.content
+      : (typeof target.text === 'string'
+        ? target.text
+        : (typeof target.boardSlice === 'string'
+          ? target.boardSlice
+          : (typeof target.boardText === 'string' ? target.boardText : '')))
+
     return {
-      content: typeof board.content === 'string' ? board.content : '',
+      content: content || '',
       startDelay,
     }
   }
-  if (typeof board === 'string') {
-    const trimmed = board.trim()
+
+  // 3. 如果是字符串
+  if (typeof target === 'string') {
+    const trimmed = target.trim()
     const legacyPrefix = trimmed.match(/^\s*[([]\s*[\d.]+(?:%|px)?\s*,\s*[\d.]+(?:%|px)?\s*[)\]]\s*(.*)$/s)
-    return { content: legacyPrefix ? legacyPrefix[1] || '' : board, startDelay: 0 }
+    return { content: legacyPrefix ? legacyPrefix[1] || '' : target, startDelay: 0 }
   }
+
   return { content: '', startDelay: 0 }
 }
 
@@ -128,10 +234,15 @@ export function normalizeAgentBV2ActionSpec(actionSpec) {
 export function normalizeAgentBV2BoardCells(rows) {
   return (Array.isArray(rows) ? rows : []).flatMap((row, index) => {
     if (!isRecord(row)) return []
+    const normalizedBoard = normalizeBoard(row.board, row)
+    const rawBoards = Array.isArray(row.boards)
+      ? row.boards
+      : (Array.isArray(row.board) ? row.board : [normalizedBoard])
     return [{
       stage: normalizeStage(row.stage, index),
       speech: typeof row.speech === 'string' ? row.speech : '',
-      board: normalizeBoard(row.board),
+      board: normalizedBoard,
+      boards: rawBoards,
       // 模型偶尔漏写 actionSpec 或动作不合规，保留该行而不是卡死整表。
       actionSpec: normalizeAgentBV2ActionSpec(row.actionSpec),
       // 音频地址与实测时长由程序在 TTS 合成后回填，模型不产出；此处仅在已有值时透传，
@@ -149,7 +260,11 @@ export function sanitizeRowLayout(rows) {
   if (!Array.isArray(rows)) return rows
   return rows.map((row) => {
     if (!isRecord(row)) return row
-    return { ...row, board: normalizeBoard(row.board) }
+    const normalizedBoard = normalizeBoard(row.board, row)
+    const rawBoards = Array.isArray(row.boards)
+      ? row.boards
+      : (Array.isArray(row.board) ? row.board : [normalizedBoard])
+    return { ...row, board: normalizedBoard, boards: rawBoards }
   })
 }
 

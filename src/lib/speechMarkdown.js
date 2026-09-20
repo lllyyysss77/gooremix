@@ -1,5 +1,6 @@
 // 画布字号/行高唯一真源：src/services/stepHandoff.js
 import { buildCanvasParams } from '../services/stepHandoff.js'
+import { getBoardContent, getBoardFromRow } from '../agent-b-v2/contract.js'
 
 /**
  * 导出物全局说明参数（真相源与规范基准）

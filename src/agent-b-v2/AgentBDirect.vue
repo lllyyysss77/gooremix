@@ -127,6 +127,15 @@ const state = ref('idle')
 const errorText = ref('')
 const generatedModel = ref('')
 const checkState = ref('idle')
+const checkProgressPercent = ref(0)
+const checkProgressStep = ref('')
+const checkHistory = ref({
+  totalReviews: 0,
+  lastReviewType: '',
+  lastChangesCount: 0,
+  lastReviewTime: '',
+  hasApplied: false,
+})
 const checkChanges = ref([])
 const checkSource = ref('check_agent') // 'check_agent' | 'math_asr'
 const pendingCheckRows = ref(null)
@@ -183,7 +192,35 @@ const currentSkillName = computed(() => {
   return skill?.name || selectedSkillId.value
 })
 let checkRunId = 0
-const toolCatalog = getAgentBoardToolCatalog()
+let checkProgressTimer = null
+
+function startCheckProgress(type = 'agent') {
+  checkProgressPercent.value = 15
+  checkProgressStep.value = type === 'math_asr' ? '正在进行纯前端算式语法树扫描与读音转换...' : '正在调用 Check Agent 独立模型督导比对...'
+  clearInterval(checkProgressTimer)
+  checkProgressTimer = setInterval(() => {
+    if (checkProgressPercent.value < 85) {
+      checkProgressPercent.value += Math.floor(Math.random() * 12) + 5
+      if (checkProgressPercent.value >= 40 && checkProgressPercent.value < 70) {
+        checkProgressStep.value = type === 'math_asr' ? '正在分析分数、未知数与复杂运算连读规则...' : '正在核验四环阶段、儿童认知节奏与标点断句...'
+      } else if (checkProgressPercent.value >= 70) {
+        checkProgressStep.value = '正在梳理逐行差异与建议补丁...'
+      }
+    }
+  }, 400)
+}
+
+function stopCheckProgress(success = true) {
+  clearInterval(checkProgressTimer)
+  checkProgressTimer = null
+  if (success) {
+    checkProgressPercent.value = 100
+    checkProgressStep.value = '审查完成'
+  } else {
+    checkProgressStep.value = '审查异常中断'
+  }
+}
+
 const checkFieldLabels = {
   stage: '环节',
   speech: '口播稿',
@@ -212,6 +249,7 @@ function formatToolExample(example) {
   return JSON.stringify({ action: example }, null, 2)
 }
 
+const toolCatalog = getAgentBoardToolCatalog()
 const toolReferenceRows = toolCatalog.tools.flatMap((tool) => {
   if (tool.actions) {
     return tool.actions.map((item) => ({
@@ -261,32 +299,90 @@ const canvasParams = ref({
 // board 列编辑状态：-1 表示无编辑，>=0 表示正在编辑的行索引
 const editingBoardIndex = ref(-1)
 
-// 解析 board 字段，兼容历史坐标前缀和当前对象格式。
-function parseBoard(board) {
-  if (board == null) return { content: '', startDelay: null }
-  if (typeof board === 'string') {
-    // v1.0 兼容：尝试解析 [x%, y%] 前缀
-    const match = board.match(/^\[(\d+(?:\.\d+)?%\s*,\s*\d+(?:\.\d+)?%)\]\s*/)
-    if (match) return { content: board.slice(match[0].length), startDelay: null }
-    return { content: board, startDelay: null }
+// 全面解析 board/boards 字段，支持数组（新契约 boards 数组）、单对象、字符串、兼容历史坐标前缀与多字段兜底。
+function parseBoard(board, row = null) {
+  let target = board
+  if (target == null && row && typeof row === 'object') {
+    target = row.boards ?? row.board ?? row.boardSlice ?? row.board_slice ?? row.boardText ?? null
   }
-  if (typeof board === 'object') {
+  // 如果传入的是包含 board/boards 属性的行对象
+  if (target && typeof target === 'object' && !Array.isArray(target) && (target.boards !== undefined || target.board !== undefined || target.boardSlice !== undefined)) {
+    target = target.boards ?? target.board ?? target.boardSlice ?? target.board_slice ?? target.boardText ?? target
+  }
+  if (target == null) return { content: '', startDelay: null }
+
+  // 1. 数组解析（新契约 boards 数组或多板书列表）
+  if (Array.isArray(target)) {
     let startDelay = null
-    if (typeof board.startDelay === 'number' && Number.isFinite(board.startDelay)) {
-      startDelay = board.startDelay
-    } else if (typeof board.startDelay === 'string') {
-      const m = board.startDelay.match(/[\d.]+/)
+    const parts = []
+    for (const item of target) {
+      if (item == null) continue
+      if (typeof item === 'string') {
+        const trimmed = item.trim()
+        if (trimmed) parts.push(trimmed)
+      } else if (typeof item === 'object') {
+        const itemContent = typeof item.content === 'string'
+          ? item.content
+          : (typeof item.text === 'string'
+            ? item.text
+            : (typeof item.boardSlice === 'string'
+              ? item.boardSlice
+              : (typeof item.boardText === 'string' ? item.boardText : '')))
+        if (itemContent && itemContent.trim()) {
+          parts.push(itemContent.trim())
+        }
+        if (startDelay === null) {
+          if (typeof item.startDelay === 'number' && Number.isFinite(item.startDelay)) {
+            startDelay = item.startDelay
+          } else if (typeof item.startDelay === 'string') {
+            const m = item.startDelay.match(/[\d.]+/)
+            if (m) {
+              const val = parseFloat(m[0])
+              if (Number.isFinite(val)) startDelay = val
+            }
+          }
+        }
+      }
+    }
+    return {
+      content: parts.join('\n'),
+      startDelay,
+    }
+  }
+
+  // 2. 字符串解析（支持 v1.0 [x%, y%] 历史前缀剥离）
+  if (typeof target === 'string') {
+    const match = target.match(/^\[(\d+(?:\.\d+)?%\s*,\s*\d+(?:\.\d+)?%)\]\s*/)
+    if (match) return { content: target.slice(match[0].length), startDelay: null }
+    return { content: target, startDelay: null }
+  }
+
+  // 3. 普通对象解析
+  if (typeof target === 'object') {
+    let startDelay = null
+    if (typeof target.startDelay === 'number' && Number.isFinite(target.startDelay)) {
+      startDelay = target.startDelay
+    } else if (typeof target.startDelay === 'string') {
+      const m = target.startDelay.match(/[\d.]+/)
       if (m) {
         const val = parseFloat(m[0])
         if (Number.isFinite(val)) startDelay = val
       }
     }
+    const content = typeof target.content === 'string'
+      ? target.content
+      : (typeof target.text === 'string'
+        ? target.text
+        : (typeof target.boardSlice === 'string'
+          ? target.boardSlice
+          : (typeof target.boardText === 'string' ? target.boardText : '')))
     return {
       startDelay,
-      content: board.content || '',
+      content: content || '',
     }
   }
-  return { content: String(board), startDelay: null }
+
+  return { content: String(target), startDelay: null }
 }
 
 function renderBoardContent(board) {
@@ -426,7 +522,16 @@ function runInstantMathAsrPolish() {
     message.warning('请先生成五字段执行表后再进行 ASR 兜底转换')
     return
   }
+  startCheckProgress('math_asr')
   const result = batchPolishRowsMathAsr(rows.value)
+  stopCheckProgress(true)
+  checkHistory.value = {
+    totalReviews: (checkHistory.value.totalReviews || 0) + 1,
+    lastReviewType: 'math_asr',
+    lastChangesCount: result.changes.length,
+    lastReviewTime: new Date().toLocaleTimeString('zh-CN', { hour12: false }),
+    hasApplied: false,
+  }
   if (!result.changes.length) {
     message.success('当前口播稿已全部符合数学自然读音规范，无需调整 ╰(๑◕ ▿ ◕๑)╯')
     return
@@ -532,6 +637,7 @@ function formatRegion(region) {
 
 function invalidateCheck() {
   checkRunId += 1
+  stopCheckProgress(false)
   checkState.value = 'idle'
   pendingCheckRows.value = null
 }
@@ -542,13 +648,16 @@ function updateRow(index, field, value) {
   if (field === 'speech' || field === 'stage') rows.value = applyAgentBV2Timeline(rows.value)
 }
 
-// 编辑 board.content，布局由渲染层负责。
+// 编辑 board.content，布局由渲染层负责。同步更新 board 和 boards 数组，保证双向一致。
 function updateBoardContent(index, content) {
   invalidateCheck()
-  const current = parseBoard(rows.value[index].board)
+  const currentRow = rows.value[index]
+  const current = parseBoard(currentRow?.board || currentRow?.boards || currentRow)
+  const updatedBoard = { content, startDelay: current.startDelay }
   rows.value[index] = {
-    ...rows.value[index],
-    board: { content, startDelay: current.startDelay },
+    ...currentRow,
+    board: updatedBoard,
+    boards: [updatedBoard],
   }
 }
 
@@ -1076,18 +1185,27 @@ async function checkRows(mode = 'standard') {
   checkState.value = 'checking'
   errorText.value = ''
   checkChanges.value = []
+  startCheckProgress('agent')
   try {
     const result = await checkAgentRows({
       rows: rows.value,
       mode,
     })
     if (runId !== checkRunId) return
+    stopCheckProgress(true)
     pendingCheckRows.value = result.rows
     checkChanges.value = result.changes
     checkSource.value = 'check_agent'
     checkState.value = 'ready'
     checkResultOpen.value = true
     checkFailedFallback.value = result.checkStatus === 'failed_fallback'
+    checkHistory.value = {
+      totalReviews: (checkHistory.value.totalReviews || 0) + 1,
+      lastReviewType: 'check_agent',
+      lastChangesCount: result.changes.length,
+      lastReviewTime: new Date().toLocaleTimeString('zh-CN', { hour12: false }),
+      hasApplied: false,
+    }
     if (result.checkStatus === 'local_asr_polished') {
       message.success(result.changes.length ? `ASR 规范优化完成，发现 ${result.changes.length} 处口播/板书改进` : 'ASR 检查完成，当前内容已符合规范')
     } else if (checkFailedFallback.value) {
@@ -1097,6 +1215,7 @@ async function checkRows(mode = 'standard') {
     }
   } catch (error) {
     if (runId !== checkRunId) return
+    stopCheckProgress(false)
     checkState.value = 'error'
     errorText.value = error?.message || String(error)
     message.error(errorText.value)
@@ -1116,6 +1235,7 @@ function applyCheckChanges() {
       message.warning('本地已应用，但保存到服务端失败，刷新后会恢复为原版本')
     })
   }
+  checkHistory.value.hasApplied = true
   pendingCheckRows.value = null
   checkChanges.value = []
   checkState.value = 'idle'
@@ -1136,6 +1256,7 @@ async function revertCheck() {
     const result = await revertCheckResult()
     rows.value = result.rows || []
     checkState.value = 'idle'
+    checkHistory.value.hasApplied = false
     message.success('已还原到 Check 之前的版本')
   } catch (error) {
     message.error(error?.message || '还原失败')
@@ -1218,7 +1339,13 @@ function serializeCurrentDeliverableState() {
 
   // 逐行深层清洗并计算单手互斥执行计划（动作定量 1-2 秒作为标点停顿，绝不与板书重叠）
   const cleanRows = (rows.value || []).map((r, idx) => {
-    const parsedBoard = parseBoard(r.board)
+    const parsedBoard = parseBoard(r.board || r.boards || r)
+    const normalizedBoardObj = {
+      content: parsedBoard.content || '',
+      startDelay: typeof parsedBoard.startDelay === 'number' && !isNaN(parsedBoard.startDelay)
+        ? parsedBoard.startDelay
+        : 0,
+    }
     const normalizedRow = {
       duration: Number(r.audioDurationMs) > 0
         ? Math.round(Number(r.audioDurationMs))
@@ -1228,12 +1355,8 @@ function serializeCurrentDeliverableState() {
       speech: r.speech != null ? String(r.speech) : '',
       audioUrl: r.audioUrl || '音频暂未生成',
       audioDurationMs: Number(r.audioDurationMs) > 0 ? Math.round(Number(r.audioDurationMs)) : null,
-      board: {
-        content: parsedBoard.content || '',
-        startDelay: typeof parsedBoard.startDelay === 'number' && !isNaN(parsedBoard.startDelay)
-          ? parsedBoard.startDelay
-          : 0,
-      },
+      board: normalizedBoardObj,
+      boards: Array.isArray(r.boards) ? r.boards : [normalizedBoardObj],
       actionSpec: Array.isArray(r.actionSpec) ? safeDeepClone(r.actionSpec) : [],
     }
     const computed = computeRowGroupTimeline(normalizedRow)
@@ -2142,6 +2265,62 @@ function isRefineFieldEqual(original, refined) {
             </div>
           </template>
 
+          <!-- Check Agent 审查状态与执行进度条卡片 -->
+          <div
+            v-if="rows.length && (checkState === 'checking' || checkHistory.totalReviews > 0 || checkChanges.length > 0)"
+            class="check-progress-card"
+          >
+            <div class="check-progress-header">
+              <div class="check-progress-title">
+                <span class="check-progress-icon">{{ checkState === 'checking' ? '⏳' : (checkHistory.hasApplied ? '✅' : '🔍') }}</span>
+                <span class="check-progress-text">审查与质量督导进度</span>
+                <span
+                  :class="['check-status-badge', checkState === 'checking' ? 'status-checking' : (checkHistory.hasApplied ? 'status-applied' : 'status-ready')]"
+                >
+                  {{ checkState === 'checking' ? '审查中' : (checkHistory.hasApplied ? '已应用修改' : '已就绪') }}
+                </span>
+              </div>
+              <div class="check-progress-meta">
+                <span v-if="checkHistory.lastReviewTime" class="meta-time">上次审查：{{ checkHistory.lastReviewTime }}</span>
+                <span v-if="checkHistory.lastChangesCount != null" class="meta-count">
+                  {{ checkHistory.lastChangesCount > 0 ? `发现 ${checkHistory.lastChangesCount} 处建议` : '表象规范' }}
+                </span>
+                <a-button
+                  v-if="checkChanges.length && !checkResultOpen"
+                  size="small"
+                  type="link"
+                  class="btn-view-changes"
+                  @click="checkResultOpen = true"
+                >
+                  查看差异清单 ({{ checkChanges.length }})
+                </a-button>
+              </div>
+            </div>
+
+            <!-- 动态进度条 -->
+            <div class="check-progress-bar-wrap">
+              <a-progress
+                :percent="checkState === 'checking' ? checkProgressPercent : 100"
+                :status="checkState === 'checking' ? 'active' : (checkState === 'error' ? 'exception' : 'success')"
+                :stroke-color="{
+                  '0%': '#16856f',
+                  '100%': '#38bdf8',
+                }"
+                :show-info="false"
+                :stroke-width="6"
+              />
+            </div>
+
+            <div class="check-progress-footer">
+              <span class="check-step-hint">
+                {{ checkState === 'checking' ? checkProgressStep : (checkChanges.length ? `已检出 ${checkChanges.length} 处润色项，可点击对比或直接一键采纳` : '当前剧本结构、口播标点与数学发音均处于优质状态') }}
+              </span>
+              <span class="check-mode-hint">
+                {{ checkHistory.lastReviewType === 'math_asr' ? '模式：纯前端 ASR 数学兜底' : '模式：Check Agent 语义质检' }}
+              </span>
+            </div>
+          </div>
+
           <!-- 演播室标准规范面板（时序与节奏由真实音频和系统底层基准自动驱动，不再暴露手动微调配置） -->
           <div class="studio-params-panel">
             <div class="params-panel-header">
@@ -2471,7 +2650,7 @@ function isRefineFieldEqual(original, refined) {
                   @click="toggleColumn('board')"
                 >
                   <span class="collapsed-icon">✍️</span>
-                  <span class="collapsed-text">{{ parseBoard(record.board).content.slice(0, 12) || '板书' }}</span>
+                  <span class="collapsed-text">{{ parseBoard(record.board || record.boards || record).content.slice(0, 12) || '板书' }}</span>
                   <span class="collapsed-tip">展开</span>
                 </div>
                 <!-- 板书列展开态 -->
@@ -2479,22 +2658,29 @@ function isRefineFieldEqual(original, refined) {
                   <div class="board-card-topbar">
                     <div class="board-tags-left">
                       <span
-                        v-if="parseBoard(record.board).startDelay"
+                        v-if="parseBoard(record.board || record.boards || record).startDelay"
                         class="board-delay-tag"
-                        :title="`本行语音播放 +${parseBoard(record.board).startDelay}s 后动笔写板书`"
+                        :title="`本行语音播放 +${parseBoard(record.board || record.boards || record).startDelay}s 后动笔写板书`"
                       >
-                        +{{ parseBoard(record.board).startDelay }}s
+                        +{{ parseBoard(record.board || record.boards || record).startDelay }}s
+                      </span>
+                      <span
+                        v-if="Array.isArray(record.boards) && record.boards.length > 1"
+                        class="board-count-tag"
+                        :title="`本行包含 ${record.boards.length} 个板书片段`"
+                      >
+                        {{ record.boards.length }} 片段
                       </span>
                     </div>
                     <span class="board-edit-hint">点击编辑板书</span>
                   </div>
-                  <div class="board-math-render" v-html="renderBoardContent(record.board) || '<span class=\'board-empty-hint\'>（无板书内容）</span>'" />
+                  <div class="board-math-render" v-html="renderBoardContent(record.board || record.boards || record) || '<span class=\'board-empty-hint\'>（无板书内容）</span>'" />
                 </div>
 
                 <div v-else class="board-card-edit">
                   <div class="board-edit-label">板书内容 (支持 KaTeX):</div>
                   <a-textarea
-                    :value="parseBoard(record.board).content"
+                    :value="parseBoard(record.board || record.boards || record).content"
                     :auto-size="{ minRows: 2, maxRows: 8 }"
                     class="board-content-input"
                     @change="(event) => updateBoardContent(index, event.target.value)"
@@ -3712,6 +3898,93 @@ function isRefineFieldEqual(original, refined) {
   box-shadow: 0 6px 18px rgba(17, 107, 91, 0.35) !important;
 }
 
+/* Check Agent 审查进度条胶囊卡片 */
+.check-progress-card {
+  background: linear-gradient(135deg, rgba(223, 244, 234, 0.5) 0%, rgba(248, 245, 237, 0.7) 100%);
+  border: 1px solid var(--line-strong, #b9cdc5);
+  border-radius: var(--control-radius, 14px);
+  padding: 12px 18px;
+  margin-bottom: 14px;
+  box-shadow: 0 2px 8px rgba(22, 59, 61, 0.04);
+  transition: all 0.2s ease;
+}
+
+.check-progress-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.check-progress-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--ink-deep, #163b3d);
+}
+
+.check-status-badge {
+  font-size: 11px;
+  padding: 1px 8px;
+  border-radius: 9999px;
+  font-weight: 600;
+}
+
+.status-checking {
+  background: #e0f2fe;
+  color: #0369a1;
+  border: 1px solid #bae6fd;
+}
+
+.status-ready {
+  background: #fef3c7;
+  color: #b45309;
+  border: 1px solid #fde68a;
+}
+
+.status-applied {
+  background: #dcfce7;
+  color: #15803d;
+  border: 1px solid #bbf7d0;
+}
+
+.check-progress-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--muted, #708786);
+}
+
+.btn-view-changes {
+  padding: 0;
+  height: auto;
+  font-size: 12px;
+  color: var(--brand, #16856f);
+  font-weight: 600;
+}
+
+.check-progress-bar-wrap {
+  margin-bottom: 6px;
+}
+
+.check-progress-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--muted, #708786);
+}
+
+.check-step-hint {
+  color: var(--ink, #31595a);
+  font-weight: 500;
+}
+
 /* 画布与演播室参数面板 */
 .studio-params-panel {
   background: var(--surface-soft, #edf7f0);
@@ -4532,6 +4805,16 @@ function isRefineFieldEqual(original, refined) {
   padding: 2px 8px;
   border-radius: 9999px;
   border: 1px solid #e9d5ff;
+}
+
+.board-count-tag {
+  font-size: 10px;
+  font-weight: 600;
+  color: #0284c7;
+  background: #f0f9ff;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  border: 1px solid #bae6fd;
 }
 
 .board-edit-hint {

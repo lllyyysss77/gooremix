@@ -83,8 +83,34 @@ export function computeRowGroupTimeline(row, options = {}) {
     ? Math.max(1500, Math.round(speechCharacters * 60000 / AGENT_B_V2_SPEECH_RATE) + punctuationPauseMs)
     : 1500
 
-  // 2. 板书内容与基础耗时
-  const boardContent = String(row.board?.content ?? (typeof row.board === 'string' ? row.board : '')).trim()
+  // 2. 板书内容与基础耗时（全面支持单对象、boards 数组、board 数组、字符串及备选字段）
+  let boardContent = ''
+  let explicitStartDelay = null
+  const targetBoard = row.board ?? row.boards ?? row.boardSlice ?? null
+  if (Array.isArray(targetBoard)) {
+    const parts = []
+    for (const item of targetBoard) {
+      if (!item) continue
+      if (typeof item === 'string') {
+        if (item.trim()) parts.push(item.trim())
+      } else if (typeof item === 'object') {
+        const text = item.content || item.text || item.boardSlice || item.boardText || ''
+        if (text && text.trim()) parts.push(text.trim())
+        if (explicitStartDelay === null && typeof item.startDelay === 'number' && item.startDelay >= 0) {
+          explicitStartDelay = item.startDelay
+        }
+      }
+    }
+    boardContent = parts.join('\n')
+  } else if (targetBoard && typeof targetBoard === 'object') {
+    boardContent = String(targetBoard.content || targetBoard.text || targetBoard.boardSlice || '').trim()
+    if (typeof targetBoard.startDelay === 'number' && targetBoard.startDelay >= 0) {
+      explicitStartDelay = targetBoard.startDelay
+    }
+  } else if (typeof targetBoard === 'string') {
+    boardContent = targetBoard.trim()
+  }
+
   const hasBoard = Boolean(boardContent)
   const boardDurationMs = hasBoard ? calculateBoardWritingDuration(boardContent) : 0
 
@@ -110,9 +136,11 @@ export function computeRowGroupTimeline(row, options = {}) {
 
   if (hasBoard && !hasAction) {
     // 纯板书情况：语音起手 0.8s~1.5s 后落笔
-    const rawDelay = typeof row.board?.startDelay === 'number' && row.board.startDelay > 0
-      ? Math.round(row.board.startDelay * 1000)
-      : Math.min(1800, Math.max(800, Math.round(speechDurationMs * 0.15)))
+    const rawDelay = explicitStartDelay !== null && explicitStartDelay > 0
+      ? Math.round(explicitStartDelay * 1000)
+      : (typeof row.board?.startDelay === 'number' && row.board.startDelay > 0
+        ? Math.round(row.board.startDelay * 1000)
+        : Math.min(1800, Math.max(800, Math.round(speechDurationMs * 0.15))))
     boardStartDelayMs = rawDelay
     boardEndDelayMs = boardStartDelayMs + boardDurationMs
 

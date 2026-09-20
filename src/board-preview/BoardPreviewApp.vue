@@ -316,11 +316,22 @@ const fourZonesCoords = computed(() => {
   ]
 })
 
-// 板书显示安全格式化（防止 [object Object]）
+// 板书显示安全格式化（全面支持 boards 数组、board 数组、单对象与字符串，防止 [object Object]）
 function formatBoardDisplay(board) {
   if (!board) return '(本步无新增板书)'
-  if (typeof board === 'string') return board
-  if (typeof board === 'object') return board.content || '(本步无新增板书)'
+  if (typeof board === 'string') return board.trim() || '(本步无新增板书)'
+  if (Array.isArray(board)) {
+    const parts = board.map(item => {
+      if (!item) return ''
+      if (typeof item === 'string') return item.trim()
+      return (item.content || item.text || item.boardSlice || item.boardText || '').trim()
+    }).filter(Boolean)
+    return parts.length ? parts.join('\n') : '(本步无新增板书)'
+  }
+  if (typeof board === 'object') {
+    const content = board.content || board.text || board.boardSlice || board.boardText
+    return (typeof content === 'string' && content.trim()) ? content.trim() : '(本步无新增板书)'
+  }
   return String(board)
 }
 

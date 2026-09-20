@@ -1,5 +1,55 @@
 # 工程日志
 
+## 2026-09-20 板书内容丢失深度排查与顺藤摸瓜全链路治理（boards 数组与 board 字段双向兼容）
+
+**背景与排查**：
+- 用户反馈页面 B 生成后的表格全部板书内容丢失，高度怀疑是新契约使用了 `boards` 数组而表格 UI 读取旧 `board` 字段导致的。
+- 顺藤摸瓜深度遍历整个生成-清洗-归一化-UI渲染-时间轴-交付物链路，精准锁定 5 大“坏蛋”：
+  1. **坏蛋 1（契约归一化截断）**：`src/agent-b-v2/contract.js` 中 `normalizeAgentBV2BoardCells` 仅读取 `row.board`；且 `normalizeBoard` 中使用 `!Array.isArray(board)` 强制排除了数组。当模型或上游输出新契约 `boards: [...]` 或 `board: [...]` 数组时，直接被洗成 `{ content: '', startDelay: 0 }`，在数据入库第一道关卡就导致板书被清空。
+  2. **坏蛋 2（表格 UI 读取截断与数组空属性陷阱）**：`src/agent-b-v2/AgentBDirect.vue` 的 `parseBoard(board)` 中，遇到数组时由于 `typeof [] === 'object'` 进入对象分支，而数组无 `.content` 属性（`[].content` 为 `undefined`），导致 `content || ''` 产出空字符串；同时表格模板全部仅绑定 `record.board`，遇到 `record.boards` 直接渲染为“（无板书内容）”。
+  3. **坏蛋 3（时序与执行计划判定失真）**：`src/agent-b-v2/timing.js` 仅使用 `row.board?.content` 判断 `hasBoard`，遇到 `boards` 数组时板书书写时长被计为 0，时间线中丢失板书任务。
+  4. **坏蛋 4（可视化与下游交付物丢失）**：`src/board-preview/BoardPreviewApp.vue` 的 `formatBoardDisplay` 与 `src/components/VisualTimeline.vue` 的 `hasBoard` 同样缺乏对数组提取的支持。
+  5. **坏蛋 5（Check Agent 回写丢失）**：`src/check-agent/asrPolish.js` 与 `server/checkAgentHandler.js` 在处理审核与回写时未保留/提取 `boards` 数组。
+
+**改动项**：
+1. `src/agent-b-v2/contract.js`：
+   - 升级 `normalizeBoard(board, row)`：全面支持新契约 `boards` 数组（字符串数组、对象数组、带 `content`/`text`/`boardSlice`/`boardText` 的项）及多片段换行合并提取；支持单对象、旧坐标前缀字符串；自动回退兜底 `row.boards`。
+   - 升级 `normalizeAgentBV2BoardCells` 与 `sanitizeRowLayout`：输出时同时提供 `board` 与 `boards` 双向镜像，彻底解决前后端契约字段不一致断层。
+2. `src/agent-b-v2/AgentBDirect.vue`：
+   - 升级 `parseBoard(board, row)`：支持传入 `record.board`、`record.boards`、整行 `record`，智能识别数组并拼接文本；修复数组进入对象分支丢失 content 的致命 bug。
+   - 升级表格模板中板书列展开态与折叠态：统一采用 `record.board || record.boards || record`，增加多板书片段数量标识。
+   - 同步 `updateBoardContent` 与 `cleanRows`：编辑和交付导出时保持 `board` 与 `boards` 双向一致。
+   - 修复未定义的 `toolCatalog` 为 `getAgentBoardToolCatalog()`。
+3. `src/agent-b-v2/timing.js`：
+   - 升级 `boardContent` 与 `explicitStartDelay` 提取逻辑，全面适配数组与单对象，保证板书书写时序计划精准生成。
+4. `src/board-preview/BoardPreviewApp.vue` & `src/components/VisualTimeline.vue`：
+   - 升级 `formatBoardDisplay`、`hasBoard`、`getStartDelay`，无缝支持 `boards` 数组。
+5. `src/check-agent/asrPolish.js` & `server/checkAgentHandler.js`：
+   - 规范化板书文本与审核校准时同时兼容 `boards` 数组并回传。
+
+**验证**：
+- 执行自定义 Node 契约测试用例（覆盖字符串数组、对象数组、带延时数组、单对象、历史前缀、时间线计算）：全部测试通过。
+- `compile_applet`：`npm run build` 成功通过。
+- `npx eslint . --quiet`：0 error。
+
+**背景与口径**：
+- 用户要求对「页面 B」（`src/agent-b-v2/AgentBDirect.vue`）应用 Ponytail skills 开展零置信度、三级深度体检（L1 架构级 / L2 函数级 / L3 行级与响应式），并将排查出的修复任务结构化记录。
+- 要求对除核心画布（`RealBoardPreview` / `BoardContentLayer`）外的整体 UI 视觉风格进行可爱、轻量、高质感改造：列表卡片阵列升级为带圆角与轻微浮动阴影的胶囊 Clip。
+- 要求在当前审查/工作台页面中增加审查状态实时进度条。
+
+**改动项**：
+1. `src/agent-b-v2/AgentBDirect.vue`：
+   - 增加审查状态进度条组件与响应式追踪状态（`checkProgressPercent`、`checkProgressStep`、`checkHistory`），无论调用 Check Agent 独立模型还是纯前端数学 ASR 兜底，均能显示百分比与阶段流转。
+   - 审查完成后保留完成度、差异统计与一键查看入口，记录采纳状态。
+   - 表格各行音频与动作 Clip 采用胶囊样式与轻微浮动阴影。
+2. `src/style.css`：
+   - 新增全局 `.clips-array-container`、`.clip-capsule-item`、`.speech-audio-pill` 及按钮胶囊微浮交互样式，符合温柔可爱、手账本轻量 UI 调性。
+3. `doc/ponytail-audit-tasks.md`：
+   - 建立结构化 15 项修复任务清单（覆盖上帝组件拆解、防抖节流、解析统一收拢与无障碍访问等），便于追踪同步。
+
+**验证**：
+- `compile_applet`：`npm run build` 成功通过，0 error。
+
 ## 2026-09-16 录屏交付按钮增加题目识别与 TTS 音轨状态预检查及 Ant Design 引导 Modal
 
 **背景与口径**：

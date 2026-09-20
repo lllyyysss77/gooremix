@@ -116,22 +116,48 @@ export function polishRowsASR(originalRows) {
       })
     }
 
-    let origBoardObj = origRow?.board
-    let newBoard = origBoardObj
+    let origBoardObj = origRow?.board ?? origRow?.boards ?? origRow?.boardSlice
 
-    if (typeof origBoardObj === 'string') {
-      const normalizedStr = normalizeBoardContent(origBoardObj)
-      if (normalizedStr !== origBoardObj) {
-        changes.push({
-          row: rowNum,
-          field: 'board',
-          before: origBoardObj,
-          after: normalizedStr,
-          reason: '板书符号规范化：乘法统一为小写 x，规范分数与公式',
-        })
+    let origContent = ''
+    let currentDelay = 0
+
+    if (Array.isArray(origBoardObj)) {
+      const parts = []
+      for (const item of origBoardObj) {
+        if (!item) continue
+        if (typeof item === 'string') parts.push(item)
+        else if (typeof item === 'object') {
+          const c = item.content || item.text || item.boardSlice || item.boardText || ''
+          if (c) parts.push(c)
+          if (!currentDelay && typeof item.startDelay === 'number' && item.startDelay > 0) {
+            currentDelay = item.startDelay
+          }
+        }
       }
-      const estDelay = estimateKeywordStartDelay(polishedSpeech, normalizedStr, stage)
-      if (estDelay > 0) {
+      origContent = parts.join('\n')
+    } else if (typeof origBoardObj === 'string') {
+      origContent = origBoardObj
+    } else if (origBoardObj && typeof origBoardObj === 'object') {
+      origContent = String(origBoardObj.content || origBoardObj.text || '')
+      currentDelay = origBoardObj.startDelay
+    }
+
+    const normalizedContent = normalizeBoardContent(origContent)
+    if (origContent && normalizedContent !== origContent) {
+      changes.push({
+        row: rowNum,
+        field: 'board',
+        before: origContent,
+        after: normalizedContent,
+        reason: '板书符号规范化：乘法统一为小写 x，规范分数与公式',
+      })
+    }
+
+    if (typeof currentDelay === 'number' && currentDelay > 0) {
+      // 模型或人工已显式设定时机，保留
+    } else if (normalizedContent && stage !== '题目') {
+      const estDelay = estimateKeywordStartDelay(polishedSpeech, normalizedContent, stage)
+      if (estDelay > 0 && (!currentDelay || currentDelay === 0)) {
         changes.push({
           row: rowNum,
           field: 'board_timing',
@@ -139,51 +165,20 @@ export function polishRowsASR(originalRows) {
           after: `+${estDelay.toFixed(1)}s`,
           reason: `语义校准板书时机：结合口播关键词换算延迟约 +${estDelay.toFixed(1)}s 落笔，避免提前剧透并保证音画同步`,
         })
+        currentDelay = estDelay
       }
-      newBoard = {
-        content: normalizedStr,
-        startDelay: estDelay,
-      }
-    } else if (origBoardObj && typeof origBoardObj === 'object') {
-      const origContent = String(origBoardObj.content || '')
-      const normalizedContent = normalizeBoardContent(origContent)
-      if (origContent !== normalizedContent) {
-        changes.push({
-          row: rowNum,
-          field: 'board',
-          before: origContent,
-          after: normalizedContent,
-          reason: '板书符号规范化：乘法统一为小写 x，规范分数与公式',
-        })
-      }
+    }
 
-      let currentDelay = origBoardObj.startDelay
-      if (typeof currentDelay === 'number' && currentDelay > 0) {
-        // 模型或人工已显式设定时机，保留
-      } else if (normalizedContent && stage !== '题目') {
-        const estDelay = estimateKeywordStartDelay(polishedSpeech, normalizedContent, stage)
-        if (estDelay > 0 && (!currentDelay || currentDelay === 0)) {
-          changes.push({
-            row: rowNum,
-            field: 'board_timing',
-            before: '+0.0s (开播即显)',
-            after: `+${estDelay.toFixed(1)}s`,
-            reason: `语义校准板书时机：结合口播关键词换算延迟约 +${estDelay.toFixed(1)}s 落笔，避免提前剧透并保证音画同步`,
-          })
-          currentDelay = estDelay
-        }
-      }
-
-      newBoard = {
-        content: normalizedContent,
-        startDelay: currentDelay !== undefined ? currentDelay : 0,
-      }
+    const newBoard = {
+      content: normalizedContent,
+      startDelay: currentDelay !== undefined ? currentDelay : 0,
     }
 
     return {
       stage,
       speech: polishedSpeech,
       board: newBoard,
+      boards: Array.isArray(origRow?.boards) ? origRow.boards : [newBoard],
       actionSpec: Array.isArray(origRow?.actionSpec) ? origRow.actionSpec : [],
     }
   })

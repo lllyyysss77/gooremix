@@ -18,7 +18,7 @@ A/B 是必要主链；Check Agent C 是可选后处理。C 未配置、失败或
 产品原则：系统放权，不绑死。题目事实和四区骨架负责锚定，Agent A 的题型、知识、公式、策略与布局均是给 Agent B 的软建议，不是门槛、评分清单或强制输出项；面对多样题型，Agent B 可以取用、改写、补充或舍弃。用户可修改生成内容、决定是否触发 C，并以点击时的当前文本作为审计真相；检查不是审批门槛。
 A/B 两页的知识关联点统一使用浅蓝胶囊标签，点击后显示完整单列详情表。布局百分比在 A→B handoff 边界统一四舍五入至最多两位小数，页面显示和 Agent B 输入均不得传播循环长小数。
 Agent B 的运行时输入收敛为核心合同、`doc/speech-board-guide.md`、`doc/self-check.md` 与 Agent A handoff。知识、公式与题目事实由 Knowledge-A handoff 提供，Check Agent 的独立参考链保持隔离。
-Agent B 实链审查已修复：板书数学软校验改查真实 `board` 字段；Check 保留现有 duration；服务端按题型传递几何合同校验；B 页面补回 `notes` 列；每行口播新增手动语音合成喇叭、重新生成、本地持久化与记录下载 URL。
+Agent B 实链审查已修复：板书内容全链路升级兼容 `boards` 数组与 `board` 单对象，板书数学软校验查真实字段；Check 保留现有 duration；服务端按题型传递几何合同校验；B 页面补回 `notes` 列；每行口播新增手动语音合成喇叭、重新生成、本地持久化与记录下载 URL；新增 Check 审查状态进度条与完成度追踪；Clip 卡片阵列采用手账风格圆角胶囊与浮动阴影。
 Agent B 后续压实：Agent A 到 B handoff 过滤文本字段，彻底停止向 B 发送原图、Base64 或画布快照；用户修改口播或环节后立即重算时间线；缺少真画布预览时给用户可见降级提示。
 Agent B 提示真相已收敛：系统 Prompt 支持 Skill 动态加载与自定义注入；`prompt.js` 保留核心合同；口播和板书方法收敛至 `speech-board-guide.md`；机器合同负责工具 schema、全局 order 和输出字段。
 BoardPreview 与交付物收口压实：录屏前置弹窗预检查拦截未就绪项并放权放行；BoardPreview 全量复用 `speechMarkdown.js` 标准导出，板书呈现增加格式容错，四区基准统一收拢至 1726×980 达芬奇手稿风格；已彻底物理删除 7 个孤儿文件与全部废弃历史换算函数。

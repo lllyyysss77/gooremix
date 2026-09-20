@@ -659,3 +659,79 @@ button:active,
   0% { transform: scale(0.92); opacity: 0; }
   100% { transform: scale(1); opacity: 1; }
 }
+
+/* 8. 柔和卡片阵列与胶囊 Clip 视觉重构 (Soft Cute Capsule Array & Float Shadow) */
+.clips-array-container,
+.action-clips-container,
+.speech-audio-actions {
+  display: flex !important;
+  align-items: center !important;
+  flex-wrap: wrap !important;
+  gap: 8px !important;
+}
+
+/* 胶囊 Clip 核心通用样式 */
+.clip-capsule-item,
+.speech-btn-horn,
+.speech-btn-preview,
+.speech-btn-regen,
+.speech-btn-savelocal,
+.speech-audio-pill,
+.action-badge-pill {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  padding: 4px 12px !important;
+  border-radius: 9999px !important;
+  border: 1px solid var(--line, #d7ded5) !important;
+  background: var(--surface, #fffdf7) !important;
+  color: var(--ink, #31595a) !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  line-height: 1.4 !important;
+  box-shadow: 0 2px 6px rgba(22, 59, 61, 0.04), 0 1px 2px rgba(22, 59, 61, 0.02) !important;
+  transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
+  cursor: pointer !important;
+  text-decoration: none !important;
+}
+
+.clip-capsule-item:hover,
+.speech-btn-horn:hover,
+.speech-btn-preview:hover,
+.speech-btn-regen:hover,
+.speech-btn-savelocal:hover,
+.speech-audio-pill:hover,
+.action-badge-pill:hover {
+  transform: translateY(-2px) !important;
+  box-shadow: 0 6px 14px rgba(22, 59, 61, 0.09), 0 2px 4px rgba(22, 59, 61, 0.04) !important;
+  border-color: var(--brand, #16856f) !important;
+  color: var(--positive-strong, #116b5b) !important;
+}
+
+.clip-capsule-item:active,
+.speech-btn-horn:active,
+.speech-btn-preview:active,
+.speech-btn-regen:active,
+.speech-btn-savelocal:active {
+  transform: translateY(0) scale(0.98) !important;
+  box-shadow: 0 2px 4px rgba(22, 59, 61, 0.05) !important;
+}
+
+/* 强调型胶囊与音频标签 */
+.speech-audio-pill {
+  background: linear-gradient(135deg, rgba(223, 244, 234, 0.6) 0%, rgba(248, 245, 237, 0.8) 100%) !important;
+  border-color: var(--line-strong, #b9cdc5) !important;
+  margin-top: 6px !important;
+}
+
+.audio-pill-label {
+  font-weight: 600 !important;
+  color: var(--positive-strong, #116b5b) !important;
+}
+
+.audio-pill-url {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
+  font-size: 11px !important;
+  color: var(--ink, #31595a) !important;
+}
+
