@@ -1,4 +1,4 @@
-﻿:root {
+:root {
   --board-handwriting-font: "平方乔木体", "Xiaxia Qiaomu Board", "KaiTi", "STKaiti", serif;
   --board-font-size: 38px;
   --zone-assets: #f6fbf8;
@@ -2877,3 +2877,14 @@ button {
 .tldraw-stage-modal .ant-modal-body {
   padding: 12px;
 }
+
+/* 临时视图：教学视频时间轴下方 board Clip 时序与 A 轨 voiceAudio 时长偏差 */
+.board-clips-temporary-view {
+  margin-top: 16px;
+  transition: all 0.2s ease-in-out;
+}
+
+.board-clips-temporary-view:hover {
+  border-color: #ff7875;
+}
+

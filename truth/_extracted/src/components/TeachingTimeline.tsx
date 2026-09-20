@@ -1,4 +1,4 @@
-﻿// @cleanroom-component: TeachingTimeline
+// @cleanroom-component: TeachingTimeline
 // @domain: teaching-timeline
 // @slot: center-timeline
 // @depends: TeachingProject.timeline
@@ -26,6 +26,7 @@ import type { TimelineClip, TimelineTrack } from '../domain/teachingProject';
 import { useVoiceTrackAudio } from '../modules/audioPlayback/useVoiceTrackAudio';
 import { TimelineTrackRow } from './TimelineTrackRow';
 import { VoiceTrack } from './VoiceTrack';
+import { BoardClipsTemporaryView } from './BoardClipsTemporaryView';
 
 const { Text } = Typography;
 
@@ -142,6 +143,14 @@ export function TeachingTimeline({
           );
         })}
       </div>
+      <BoardClipsTemporaryView
+        clips={clips}
+        onSelectClip={onSelectClip}
+        onSetPlayhead={onSetPlayhead}
+        onUpdateBoardTiming={onUpdateBoardTiming}
+        playheadMs={playheadMs}
+        selectedClipId={selectedClipId}
+      />
     </Card>
   );
 }

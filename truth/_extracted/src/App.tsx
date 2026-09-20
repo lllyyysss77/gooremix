@@ -1,5 +1,5 @@
-import { CheckCircleFilled, ClockCircleFilled, MessageOutlined, SettingOutlined, VideoCameraOutlined } from '@ant-design/icons';
-import { Button, ConfigProvider, Layout, Modal, Space, Spin, Tag, Tooltip, Typography } from 'antd';
+import { CheckCircleFilled, ClockCircleFilled, DownloadOutlined, MessageOutlined, SettingOutlined, VideoCameraOutlined } from '@ant-design/icons';
+import { Button, ConfigProvider, Layout, Modal, Space, Spin, Tag, Tooltip, Typography, message } from 'antd';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppSettingsDrawer } from './components/AppSettingsDrawer';
 import { AssetPanel } from './components/AssetPanel';
@@ -11,6 +11,7 @@ import { TeachingTimeline } from './components/TeachingTimeline';
 import type { ScriptAgentDraft } from './domain/teachingProject';
 import type { VisibleWorkflowStepKey } from './workflow/assetWorkflowFlow';
 import {
+  downloadTeachingProjectJson,
   importProjectFromLocalTaskFolder,
   saveProjectToLocalTaskFolder,
   selectDefaultLocalTaskFolder,
@@ -247,6 +248,14 @@ function EditorShell() {
     await refreshRecentTaskSnapshots();
     return true;
   }, [refreshRecentTaskSnapshots, restoreProjectSnapshot]);
+  const handleExportProjectJson = useCallback(() => {
+    try {
+      const fileName = downloadTeachingProjectJson(project);
+      message.success(`已成功导出项目数据到本地：${fileName}`);
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '导出项目失败');
+    }
+  }, [project]);
 
   return (
     <Layout className={isRecordingFocusMode ? 'app-shell app-shell--recording-focus' : 'app-shell'}>
@@ -268,6 +277,9 @@ function EditorShell() {
           </Button>
           <Button icon={<SettingOutlined />} onClick={() => setSettingsOpen(true)}>
             配置
+          </Button>
+          <Button icon={<DownloadOutlined />} onClick={handleExportProjectJson}>
+            导出项目
           </Button>
           <ProjectArchiveActions
             defaultSaveDirectoryLabel={config.output.defaultSaveDirectoryLabel}

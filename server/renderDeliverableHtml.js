@@ -3,17 +3,22 @@ import { resolve, dirname } from 'path'
 import { fileURLToPath } from 'url'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
-const playerTemplatePath = resolve(__dirname, '../public/deliverable/handdraw-player.html')
+const rowPlayerTemplatePath = resolve(__dirname, '../public/deliverable/row-player.html')
+const handdrawPlayerTemplatePath = resolve(__dirname, '../public/deliverable/handdraw-player.html')
 
 /**
  * 统一微课与参数交付物单页生成器
- * 读取 public/deliverable/handdraw-player.html 模板，注入预置交付物 JSON 数据
+ * 读取 public/deliverable/row-player.html (或 handdraw-player.html) 模板，注入预置交付物 JSON 数据
  * 杜绝多套 HTML 页面分化，统一归拢为单一高保真微课演播交付物
  */
 export function renderDeliverableHtml(deliverable) {
-  if (existsSync(playerTemplatePath)) {
+  const templatePath = existsSync(rowPlayerTemplatePath)
+    ? rowPlayerTemplatePath
+    : (existsSync(handdrawPlayerTemplatePath) ? handdrawPlayerTemplatePath : null)
+
+  if (templatePath) {
     try {
-      const template = readFileSync(playerTemplatePath, 'utf-8')
+      const template = readFileSync(templatePath, 'utf-8')
       const safeJson = JSON.stringify(deliverable || {}).replace(/</g, '\\u003c')
       const injectedScript = `<script>window.__INITIAL_DELIVERABLE__ = ${safeJson};</script>\n</head>`
       return template.replace('</head>', injectedScript)
@@ -31,7 +36,7 @@ export function renderDeliverableHtml(deliverable) {
   <title>青花布手绘板书微课演播</title>
 </head>
 <body>
-  <script>window.location.href = '/deliverable/handdraw-player.html';</script>
+  <script>window.location.href = '/deliverable/row-player.html';</script>
 </body>
 </html>`
 }

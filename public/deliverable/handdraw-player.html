@@ -1,0 +1,1460 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>青花布微课演播 · 画布绘图编辑器</title>
+  <!-- 手写与数学字体 -->
+  <link href="https://fontsapi.zeoseven.com/490/main/result.css" rel="stylesheet">
+  <link href="https://fontsapi.zeoseven.com/510/main/result.css" rel="stylesheet">
+  <!-- 本地粗糙手绘库 -->
+  <script src="/rough.js"></script>
+  <style>
+    @import url("https://fontsapi.zeoseven.com/490/main/result.css");
+    :root {
+      --bg: #0f172a;
+      --panel-bg: rgba(30, 41, 59, 0.92);
+      --panel-border: rgba(255, 255, 255, 0.12);
+      --board-bg: #fbfaf6;
+      --ink: #1e293b;
+      --red: #c9302c;
+      --blue: #2563eb;
+      --green: #16a34a;
+      --yellow: #facc15;
+      --text-light: #f8fafc;
+      --text-dim: #94a3b8;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text-light);
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", "Microsoft YaHei", sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      user-select: none;
+    }
+
+    /* 顶部导航与控制栏 */
+    header.player-header {
+      height: 54px;
+      background: var(--panel-bg);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--panel-border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      z-index: 100;
+      flex-shrink: 0;
+    }
+    .header-left, .header-center, .header-right {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .brand-title {
+      font-size: 15px;
+      font-weight: 600;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .brand-tag {
+      font-size: 11px;
+      background: rgba(37, 99, 235, 0.25);
+      color: #60a5fa;
+      border: 1px solid rgba(96, 165, 250, 0.35);
+      border-radius: 4px;
+      padding: 1px 6px;
+      font-weight: normal;
+    }
+    .ctrl-btn {
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      color: #e2e8f0;
+      border-radius: 6px;
+      padding: 6px 12px;
+      font-size: 13px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s;
+    }
+    .ctrl-btn:hover {
+      background: rgba(255, 255, 255, 0.16);
+      border-color: rgba(255, 255, 255, 0.28);
+      color: #fff;
+    }
+    .ctrl-btn.active {
+      background: #2563eb;
+      border-color: #3b82f6;
+      color: #fff;
+    }
+    .time-display {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 13px;
+      color: #94a3b8;
+      min-width: 115px;
+      text-align: center;
+    }
+    .progress-bar-container {
+      width: 240px;
+      height: 6px;
+      background: rgba(255, 255, 255, 0.15);
+      border-radius: 3px;
+      cursor: pointer;
+      position: relative;
+    }
+    .progress-bar-fill {
+      height: 100%;
+      background: #3b82f6;
+      border-radius: 3px;
+      width: 0%;
+      pointer-events: none;
+    }
+
+    /* 主画布区域 */
+    main.viewport {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #090d16;
+    }
+
+    /* 1726 x 980 虚拟高保真板书容器 */
+    .board-wrapper {
+      position: relative;
+      width: 1726px;
+      height: 980px;
+      background: var(--board-bg);
+      border-radius: 8px;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+      transform-origin: center center;
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+
+    /* 板面底层底图与参考线 */
+    .board-bg-img {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 1;
+      object-fit: cover;
+    }
+    .board-guides {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      z-index: 2;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+    .board-guides.visible {
+      opacity: 1;
+    }
+    .guide-line {
+      position: absolute;
+      border: 1px dashed rgba(37, 99, 235, 0.45);
+    }
+    .guide-label {
+      position: absolute;
+      font-size: 13px;
+      background: rgba(37, 99, 235, 0.12);
+      color: #2563eb;
+      padding: 2px 8px;
+      border-radius: 4px;
+      border: 1px solid rgba(37, 99, 235, 0.3);
+    }
+
+    /* 四个阶段贴纸标签 */
+    .stage-badge {
+      position: absolute;
+      z-index: 10;
+      pointer-events: none;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: #fff;
+      padding: 4px 10px;
+      border-radius: 6px;
+      border: 1px solid #e2e8f0;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
+      font-weight: 600;
+      font-size: 16px;
+      opacity: 0.9;
+    }
+    .stage-badge.badge-topic { left: 5.7%; top: 5.5%; color: #1e293b; }
+    .stage-badge.badge-analysis { left: 5.7%; top: 34.5%; color: #c9302c; }
+    .stage-badge.badge-solution { left: 53.7%; top: 5.5%; color: #1e293b; }
+    .stage-badge.badge-summary { left: 53.7%; top: 62.0%; color: #1e293b; }
+
+    /* 四大板书文字区域 */
+    .region {
+      position: absolute;
+      z-index: 15;
+      line-height: 1.65;
+      white-space: pre-wrap;
+      word-break: break-word;
+      pointer-events: none;
+    }
+    #region-topic {
+      left: 5.7%;
+      top: 11.5%;
+      width: 44%;
+      font-size: 28px;
+      font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
+      color: #1e293b;
+      font-weight: 500;
+    }
+    #region-analysis {
+      left: 5.7%;
+      top: 41.5%;
+      width: 44%;
+      font-size: 34px;
+      font-family: "LikeJianJianTi", "PingFang SC", cursive, sans-serif;
+      color: #c9302c;
+    }
+    #region-solution {
+      left: 53.7%;
+      top: 11.5%;
+      width: 43%;
+      font-size: 34px;
+      font-family: "LikeJianJianTi", "PingFang SC", cursive, sans-serif;
+      color: #1e293b;
+    }
+    #region-summary {
+      left: 53.7%;
+      top: 68.0%;
+      width: 43%;
+      font-size: 34px;
+      font-family: "LikeJianJianTi", "PingFang SC", cursive, sans-serif;
+      color: #1e293b;
+    }
+
+    /* 手写动画与分数支持 */
+    .frac {
+      display: inline-flex;
+      flex-direction: column;
+      vertical-align: middle;
+      text-align: center;
+      margin: 0 0.15em;
+      line-height: 1.05;
+    }
+    .frac > .num {
+      border-bottom: 2px solid currentColor;
+      padding: 0 0.2em;
+    }
+    .frac > .den {
+      padding: 0 0.2em;
+    }
+
+    /* 播放同步 SVG 动作覆层 (Rough.js) */
+    svg#rough-svg-overlay {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 20;
+      pointer-events: none;
+    }
+
+    /* 用户交互自由绘图 Canvas 覆层 (Canvas Drawing Editor) */
+    canvas#drawing-canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 30;
+      cursor: crosshair;
+    }
+
+    /* 浮动画布绘图工具栏 (参考 typsusan-zzz/canvas-drawing-editor) */
+    .drawing-toolbar {
+      position: absolute;
+      top: 18px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--panel-bg);
+      backdrop-filter: blur(14px);
+      border: 1px solid var(--panel-border);
+      border-radius: 10px;
+      padding: 6px 14px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+      z-index: 500;
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .drawing-toolbar.hidden {
+      opacity: 0;
+      transform: translateX(-50%) translateY(-20px);
+      pointer-events: none;
+    }
+    .tool-group {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .tool-divider {
+      width: 1px;
+      height: 24px;
+      background: rgba(255, 255, 255, 0.15);
+      margin: 0 2px;
+    }
+    .tool-btn {
+      width: 34px;
+      height: 34px;
+      border-radius: 6px;
+      background: transparent;
+      border: 1px solid transparent;
+      color: #94a3b8;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 16px;
+      transition: all 0.18s;
+      position: relative;
+    }
+    .tool-btn:hover {
+      background: rgba(255, 255, 255, 0.1);
+      color: #fff;
+    }
+    .tool-btn.active {
+      background: rgba(37, 99, 235, 0.3);
+      border-color: #3b82f6;
+      color: #60a5fa;
+    }
+    .color-picker-dot {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      cursor: pointer;
+      border: 2px solid transparent;
+      transition: transform 0.15s, border-color 0.15s;
+    }
+    .color-picker-dot:hover {
+      transform: scale(1.18);
+    }
+    .color-picker-dot.active {
+      border-color: #fff;
+      transform: scale(1.25);
+    }
+
+    /* 左下角小 Agent 助教 (AI Canvas Aide) */
+    .agent-wrapper {
+      position: fixed;
+      bottom: 24px;
+      left: 24px;
+      z-index: 1000;
+      display: flex;
+      flex-direction: column-reverse;
+      align-items: flex-start;
+      gap: 12px;
+    }
+    .agent-avatar-trigger {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: linear-gradient(135deg, #1e293b, #0f172a);
+      border: 1.5px solid rgba(96, 165, 250, 0.5);
+      box-shadow: 0 8px 24px rgba(37, 99, 235, 0.35);
+      border-radius: 40px;
+      padding: 6px 14px 6px 6px;
+      cursor: pointer;
+      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .agent-avatar-trigger:hover {
+      transform: translateY(-2px) scale(1.02);
+      box-shadow: 0 12px 30px rgba(37, 99, 235, 0.45);
+      border-color: #60a5fa;
+    }
+    .agent-avatar-icon {
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #2563eb, #38bdf8);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      color: #fff;
+      position: relative;
+    }
+    .agent-pulse {
+      position: absolute;
+      inset: -3px;
+      border-radius: 50%;
+      border: 2px solid #38bdf8;
+      animation: agent-pulse-anim 2s infinite;
+      opacity: 0.7;
+    }
+    @keyframes agent-pulse-anim {
+      0% { transform: scale(0.95); opacity: 0.8; }
+      50% { transform: scale(1.2); opacity: 0; }
+      100% { transform: scale(0.95); opacity: 0; }
+    }
+    .agent-title-text {
+      display: flex;
+      flex-direction: column;
+    }
+    .agent-name {
+      font-size: 13px;
+      font-weight: 600;
+      color: #fff;
+    }
+    .agent-status {
+      font-size: 11px;
+      color: #38bdf8;
+    }
+
+    /* Agent 展开交互与调节面板 */
+    .agent-panel {
+      width: 360px;
+      background: rgba(15, 23, 42, 0.95);
+      backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      box-shadow: 0 16px 48px rgba(0, 0, 0, 0.65);
+      border-radius: 12px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      transform-origin: bottom left;
+      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .agent-panel.minimized {
+      opacity: 0;
+      transform: scale(0.9) translateY(20px);
+      pointer-events: none;
+      position: absolute;
+    }
+    .agent-panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-bottom: 10px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    .agent-panel-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .agent-panel-close {
+      background: none;
+      border: none;
+      color: #94a3b8;
+      cursor: pointer;
+      font-size: 16px;
+    }
+    .agent-panel-close:hover {
+      color: #fff;
+    }
+
+    /* 场景化一键调节方案 */
+    .agent-section-title {
+      font-size: 12px;
+      color: #94a3b8;
+      font-weight: 500;
+      margin-bottom: 6px;
+    }
+    .preset-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .preset-btn {
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 8px;
+      padding: 8px 10px;
+      font-size: 12px;
+      color: #e2e8f0;
+      text-align: left;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .preset-btn:hover {
+      background: rgba(37, 99, 235, 0.2);
+      border-color: #3b82f6;
+      color: #fff;
+    }
+    .preset-btn b {
+      color: #60a5fa;
+      font-size: 13px;
+    }
+
+    /* 常见疑问解答小条目 */
+    .faq-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .faq-item {
+      background: rgba(255, 255, 255, 0.04);
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-size: 12px;
+      color: #cbd5e1;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      transition: background 0.2s;
+    }
+    .faq-item:hover {
+      background: rgba(255, 255, 255, 0.08);
+      color: #fff;
+    }
+
+    /* 语音播报/底部口播文本提示条 */
+    .speech-sub-bar {
+      position: absolute;
+      bottom: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(15, 23, 42, 0.88);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 20px;
+      padding: 6px 18px;
+      font-size: 14px;
+      color: #f1f5f9;
+      max-width: 65%;
+      text-align: center;
+      pointer-events: none;
+      z-index: 80;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* 隐藏原生的音频元素 */
+    audio#audio-master {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 顶部主控制条 -->
+  <header class="player-header">
+    <div class="header-left">
+      <div class="brand-title">
+        <span>🎬 青花布微课演播</span>
+        <span class="brand-tag">画布绘图编辑器</span>
+      </div>
+      <button class="ctrl-btn" id="btn-toggle-toolbar">
+        <span>🎨</span> 绘图工具栏
+      </button>
+      <button class="ctrl-btn" id="btn-toggle-guides">
+        <span>📐</span> 四区排版网格
+      </button>
+    </div>
+
+    <div class="header-center">
+      <button class="ctrl-btn" id="btn-play-pause">
+        <span id="play-icon">▶</span> <span id="play-text">播放</span>
+      </button>
+      <div class="progress-bar-container" id="progress-container">
+        <div class="progress-bar-fill" id="progress-fill"></div>
+      </div>
+      <span class="time-display" id="time-text">00:00 / 00:00</span>
+    </div>
+
+    <div class="header-right">
+      <button class="ctrl-btn" id="btn-export-png">
+        <span>💾</span> 导出板书图片
+      </button>
+      <button class="ctrl-btn" id="btn-load-json">
+        <span>📂</span> 载入交付物
+      </button>
+      <input type="file" id="file-json-input" accept=".json" style="display: none;" />
+    </div>
+  </header>
+
+  <!-- 主视口与画布区域 -->
+  <main class="viewport" id="viewport">
+    <div class="board-wrapper" id="board-wrapper">
+      <!-- 板面底图 -->
+      <img src="/canvas.png" alt="Board Canvas Background" class="board-bg-img" onerror="this.style.display='none'" />
+
+      <!-- 四区安全参考线 (通过小 Agent 或顶部按钮切换) -->
+      <div class="board-guides" id="board-guides">
+        <div class="guide-line" style="left: 5%; top: 5%; width: 45%; height: 26%;"></div>
+        <div class="guide-label" style="left: 5.5%; top: 2.2%;">【题目区 Safe Area】</div>
+
+        <div class="guide-line" style="left: 5%; top: 34%; width: 45%; height: 60%; border-color: rgba(201, 48, 44, 0.45);"></div>
+        <div class="guide-label" style="left: 5.5%; top: 31.2%; color: #c9302c; border-color: rgba(201,48,44,0.3);">【分析区 Safe Area】</div>
+
+        <div class="guide-line" style="left: 53%; top: 5%; width: 44%; height: 52%;"></div>
+        <div class="guide-label" style="left: 53.5%; top: 2.2%;">【解答区 Safe Area】</div>
+
+        <div class="guide-line" style="left: 53%; top: 61%; width: 44%; height: 33%;"></div>
+        <div class="guide-label" style="left: 53.5%; top: 58.2%;">【总结区 Safe Area】</div>
+      </div>
+
+      <!-- 四大阶段贴纸 -->
+      <div class="stage-badge badge-topic" id="badge-topic">
+        <img src="/topic.png" width="22" height="22" onerror="this.style.display='none'" />
+        <span>题目</span>
+      </div>
+      <div class="stage-badge badge-analysis" id="badge-analysis">
+        <img src="/analysis.png" width="22" height="22" onerror="this.style.display='none'" />
+        <span>分析</span>
+      </div>
+      <div class="stage-badge badge-solution" id="badge-solution">
+        <img src="/solution.png" width="22" height="22" onerror="this.style.display='none'" />
+        <span>解答</span>
+      </div>
+      <div class="stage-badge badge-summary" id="badge-summary">
+        <img src="/summary.png" width="22" height="22" onerror="this.style.display='none'" />
+        <span>总结</span>
+      </div>
+
+      <!-- 四大板书文字区域 -->
+      <div class="region" id="region-topic"></div>
+      <div class="region" id="region-analysis"></div>
+      <div class="region" id="region-solution"></div>
+      <div class="region" id="region-summary"></div>
+
+      <!-- 微课演播同步标注 (Rough.js SVG) -->
+      <svg id="rough-svg-overlay"></svg>
+
+      <!-- 用户交互自由绘图 Canvas (Canvas Drawing Editor) -->
+      <canvas id="drawing-canvas" width="1726" height="980"></canvas>
+    </div>
+
+    <!-- 浮动画布绘图工具栏 (typsusan-zzz/canvas-drawing-editor 风格) -->
+    <div class="drawing-toolbar" id="drawing-toolbar">
+      <div class="tool-group">
+        <button class="tool-btn active" data-tool="pen" title="自由草稿笔 (Pen)">✏️</button>
+        <button class="tool-btn" data-tool="highlighter" title="荧光划重点 (Highlighter)">🖍️</button>
+        <button class="tool-btn" data-tool="line" title="直线 / 辅助线 (Line)">📏</button>
+        <button class="tool-btn" data-tool="arrow" title="引导箭头 (Arrow)">➔</button>
+        <button class="tool-btn" data-tool="rect" title="重点矩形框 (Rectangle)">🔲</button>
+        <button class="tool-btn" data-tool="circle" title="圈画重点 (Circle)">⭕</button>
+        <button class="tool-btn" data-tool="eraser" title="橡皮擦 (Eraser)">🧹</button>
+      </div>
+
+      <div class="tool-divider"></div>
+
+      <!-- 虚线辅助线切换 -->
+      <div class="tool-group">
+        <button class="tool-btn" id="tool-btn-dash" title="切换实线 / 虚线辅助线">┈</button>
+      </div>
+
+      <div class="tool-divider"></div>
+
+      <!-- 配色圆点选择器 -->
+      <div class="tool-group" id="color-palette">
+        <div class="color-picker-dot active" data-color="#1e293b" style="background: #1e293b;" title="墨黑"></div>
+        <div class="color-picker-dot" data-color="#dc2626" style="background: #dc2626;" title="批注红"></div>
+        <div class="color-picker-dot" data-color="#2563eb" style="background: #2563eb;" title="几何蓝"></div>
+        <div class="color-picker-dot" data-color="#16a34a" style="background: #16a34a;" title="辅助绿"></div>
+        <div class="color-picker-dot" data-color="#facc15" style="background: #facc15;" title="荧光黄"></div>
+        <div class="color-picker-dot" data-color="#ffffff" style="background: #ffffff; border: 1px solid #cbd5e1;" title="粉笔白"></div>
+      </div>
+
+      <div class="tool-divider"></div>
+
+      <!-- 笔触粗细 -->
+      <div class="tool-group">
+        <button class="tool-btn" data-size="2" title="细 (2px)">·</button>
+        <button class="tool-btn active" data-size="4" title="中 (4px)">•</button>
+        <button class="tool-btn" data-size="8" title="粗 (8px)">●</button>
+        <button class="tool-btn" data-size="14" title="特粗 (14px)">⬤</button>
+      </div>
+
+      <div class="tool-divider"></div>
+
+      <!-- 撤销/重做/清除 -->
+      <div class="tool-group">
+        <button class="tool-btn" id="btn-undo" title="撤销 (Ctrl+Z)">↩️</button>
+        <button class="tool-btn" id="btn-redo" title="重做 (Ctrl+Y)">↪️</button>
+        <button class="tool-btn" id="btn-clear-draw" title="清空所有绘制草稿">🗑️</button>
+      </div>
+    </div>
+
+    <!-- 底部口播句子字幕条 -->
+    <div class="speech-sub-bar" id="speech-subtitle">青花布手绘板书微课准备就绪</div>
+  </main>
+
+  <!-- 左下角智能板书助教 Agent (AI Canvas Aide) -->
+  <aside class="agent-wrapper" id="agent-wrapper">
+    <!-- 悬浮触发圆形头像按钮 -->
+    <div class="agent-avatar-trigger" id="agent-trigger" title="点击呼唤板书助教小助手">
+      <div class="agent-avatar-icon">
+        <span>🤖</span>
+        <div class="agent-pulse"></div>
+      </div>
+      <div class="agent-title-text">
+        <span class="agent-name">板书助教小布</span>
+        <span class="agent-status">在线 · 点击帮您调节</span>
+      </div>
+    </div>
+
+    <!-- 展开后的智能调节抽屉面板 -->
+    <div class="agent-panel minimized" id="agent-panel">
+      <div class="agent-panel-header">
+        <div class="agent-panel-title">
+          <span>🤖 板书助教 · 智能调节中心</span>
+        </div>
+        <button class="agent-panel-close" id="agent-close">✕</button>
+      </div>
+
+      <!-- 一键场景预设调节 -->
+      <div>
+        <div class="agent-section-title">⚡ 一键场景快捷配置</div>
+        <div class="preset-grid">
+          <button class="preset-btn" id="preset-geo-line">
+            <b>📐 几何辅助虚线</b>
+            <span>自动选虚线+几何蓝</span>
+          </button>
+          <button class="preset-btn" id="preset-highlight">
+            <b>💡 题眼圈画高亮</b>
+            <span>选荧光笔+亮黄色</span>
+          </button>
+          <button class="preset-btn" id="preset-handwrite-pen">
+            <b>✏️ 达芬奇草稿笔</b>
+            <span>微颤感随手演算</span>
+          </button>
+          <button class="preset-btn" id="preset-toggle-guides">
+            <b>🎯 四区安全网格</b>
+            <span>定位参考线开关</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- 新手常用疑问与引导 -->
+      <div>
+        <div class="agent-section-title">💬 新手常见操作引导</div>
+        <div class="faq-list">
+          <div class="faq-item" id="faq-aux-line">
+            <span>❓ 怎么画几何图形的高与辅助虚线？</span>
+            <span>➔</span>
+          </div>
+          <div class="faq-item" id="faq-mark-point">
+            <span>❓ 怎么在板书上快速划选重点题眼？</span>
+            <span>➔</span>
+          </div>
+          <div class="faq-item" id="faq-erase">
+            <span>❓ 画错了草稿怎么撤销与擦除？</span>
+            <span>➔</span>
+          </div>
+          <div class="faq-item" id="faq-export">
+            <span>❓ 导出的图片包含我画的涂鸦吗？</span>
+            <span>➔</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 快捷提示语 -->
+      <div style="font-size: 11px; color: #94a3b8; line-height: 1.5; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 8px;">
+        💡 提示：播放微课时您可以随时暂停，自由画图圈注重点；点击顶部「导出板书图片」即可合成高保真教案长图！
+      </div>
+    </div>
+  </aside>
+
+  <!-- 主时钟音频播放器 -->
+  <audio id="audio-master" preload="auto"></audio>
+
+  <script>
+    "use strict";
+
+    /* =========================================================================
+     * 1. 全局状态与数据加载
+     * ========================================================================= */
+    const state = {
+      deliverable: null,
+      isPlaying: false,
+      currentTimeMs: 0,
+      totalDurationMs: 0,
+      activeRowIndex: -1,
+      zoomScale: 1,
+      showGuides: false,
+      // 绘图编辑器配置 (Canvas Drawing Editor)
+      drawing: {
+        tool: 'pen', // 'pen' | 'highlighter' | 'line' | 'arrow' | 'rect' | 'circle' | 'eraser'
+        color: '#1e293b',
+        size: 4,
+        isDashed: false,
+        isDrawing: false,
+        startX: 0,
+        startY: 0,
+        history: [],
+        redoStack: [],
+        currentPath: []
+      }
+    };
+
+    // DOM 元素缓存
+    const el = {
+      viewport: document.getElementById('viewport'),
+      boardWrapper: document.getElementById('board-wrapper'),
+      boardGuides: document.getElementById('board-guides'),
+      drawingCanvas: document.getElementById('drawing-canvas'),
+      drawingCtx: document.getElementById('drawing-canvas').getContext('2d'),
+      roughSvg: document.getElementById('rough-svg-overlay'),
+      audio: document.getElementById('audio-master'),
+      btnPlayPause: document.getElementById('btn-play-pause'),
+      playIcon: document.getElementById('play-icon'),
+      playText: document.getElementById('play-text'),
+      timeText: document.getElementById('time-text'),
+      progressFill: document.getElementById('progress-fill'),
+      progressContainer: document.getElementById('progress-container'),
+      speechSubtitle: document.getElementById('speech-subtitle'),
+      btnToggleToolbar: document.getElementById('btn-toggle-toolbar'),
+      btnToggleGuides: document.getElementById('btn-toggle-guides'),
+      drawingToolbar: document.getElementById('drawing-toolbar'),
+      btnUndo: document.getElementById('btn-undo'),
+      btnRedo: document.getElementById('btn-redo'),
+      btnClearDraw: document.getElementById('btn-clear-draw'),
+      btnExportPng: document.getElementById('btn-export-png'),
+      btnLoadJson: document.getElementById('btn-load-json'),
+      fileJsonInput: document.getElementById('file-json-input'),
+      agentTrigger: document.getElementById('agent-trigger'),
+      agentPanel: document.getElementById('agent-panel'),
+      agentClose: document.getElementById('agent-close'),
+      toolBtnDash: document.getElementById('tool-btn-dash'),
+      // 四个文字区域
+      regionTopic: document.getElementById('region-topic'),
+      regionAnalysis: document.getElementById('region-analysis'),
+      regionSolution: document.getElementById('region-solution'),
+      regionSummary: document.getElementById('region-summary')
+    };
+
+    /* =========================================================================
+     * 2. 视口自适应缩放 (保证 1726 x 980 绝对无形变)
+     * ========================================================================= */
+    function resizeBoard() {
+      const vw = el.viewport.clientWidth - 40;
+      const vh = el.viewport.clientHeight - 40;
+      const bw = 1726;
+      const bh = 980;
+      const scale = Math.min(vw / bw, vh / bh, 1.25);
+      state.zoomScale = scale;
+      el.boardWrapper.style.transform = `scale(${scale})`;
+    }
+    window.addEventListener('resize', resizeBoard);
+
+    /* =========================================================================
+     * 3. 过滤器与数学排版 (\frac{a}{b} 严格转化，禁止 ÷ 豆腐块)
+     * ========================================================================= */
+    function formatBoardText(text) {
+      if (!text) return '';
+      let res = String(text);
+
+      // LaTeX 转 Unicode 与 字符降级
+      res = res.replace(/\\times(?![a-zA-Z])/g, '×')
+               .replace(/\\cdot(?![a-zA-Z])/g, '·')
+               .replace(/\\div(?![a-zA-Z])/g, '/')
+               .replace(/÷/g, '/');
+
+      // 分数自动升华 a/b -> <span class="frac"><span class="num">a</span><span class="den">b</span></span>
+      // 兼容形如 (9+6)x8/2=60 中的 8/2
+      const fracRegex = /([A-Za-z\d]+)\s*\/\s*([A-Za-z\d]+)/g;
+      res = res.replace(fracRegex, (m, num, den) => {
+        return `<span class="frac"><span class="num">${num}</span><span class="den">${den}</span></span>`;
+      });
+
+      return res;
+    }
+
+    /* =========================================================================
+     * 4. 交付物数据载入与时钟构建
+     * ========================================================================= */
+    async function initDeliverableData() {
+      let data = window.__INITIAL_DELIVERABLE__;
+
+      // 1. 如果没有注入，尝试从 localStorage 获取最新的 Agent B 交付物
+      if (!data) {
+        try {
+          const cached = localStorage.getItem('agent-b-deliverable');
+          if (cached) data = JSON.parse(cached);
+        } catch (e) {}
+      }
+
+      // 2. 如果还没有，尝试 fetch /deliverable/current.json
+      if (!data) {
+        try {
+          const resp = await fetch('/deliverable/current.json');
+          if (resp.ok) data = await resp.json();
+        } catch (e) {}
+      }
+
+      if (data) {
+        loadDeliverable(data);
+      } else {
+        el.speechSubtitle.innerText = '请点击右上角「载入交付物」选择 deliverable.json 开始演播';
+      }
+    }
+
+    function loadDeliverable(raw) {
+      // 兼容不同层级嵌套包装
+      const root = raw.deliverable && raw.deliverable.rows ? raw.deliverable : (raw.deliverable || raw);
+      state.deliverable = root;
+
+      // 计算时序主轴总时长
+      let totalMs = 0;
+      const rows = root.rows || [];
+      rows.forEach(r => {
+        const d = Number(r.audioDurationMs) || (Number(r.duration) ? Number(r.duration) * 1000 : 3000);
+        r._durationMs = d;
+        r._startMs = totalMs;
+        r._endMs = totalMs + d;
+        totalMs += d;
+      });
+      state.totalDurationMs = Math.max(totalMs, 1000);
+
+      // 设置题目区初始内容
+      const problem = root.problemText || (root.topicLayout && root.topicLayout.question && root.topicLayout.question.text) || '';
+      el.regionTopic.innerHTML = formatBoardText(problem);
+
+      // 初始渲染第 0 毫秒
+      seekToMs(0);
+      resizeBoard();
+      el.speechSubtitle.innerText = `已载入微课《${root.projectCode || '教学讲解'}》共 ${rows.length} 步`;
+    }
+
+    /* =========================================================================
+     * 5. 音频作为主时钟 (Audio-Master Clock)
+     * ========================================================================= */
+    function syncPlayback() {
+      if (!state.isPlaying) return;
+
+      const rows = (state.deliverable && state.deliverable.rows) || [];
+      if (!rows.length) return;
+
+      // 寻找当前时间点所在的 row
+      let activeIndex = rows.findIndex(r => state.currentTimeMs >= r._startMs && state.currentTimeMs < r._endMs);
+      if (activeIndex === -1) {
+        if (state.currentTimeMs >= state.totalDurationMs) {
+          pause();
+          seekToMs(state.totalDurationMs);
+          return;
+        }
+        activeIndex = rows.length - 1;
+      }
+
+      const activeRow = rows[activeIndex];
+
+      // 音频换行驱动或同步
+      if (activeRow.audioUrl) {
+        const audioSrc = activeRow.audioUrl;
+        if (el.audio.dataset.currentRowId !== String(activeRow.rowId || activeIndex)) {
+          el.audio.dataset.currentRowId = String(activeRow.rowId || activeIndex);
+          el.audio.src = audioSrc;
+          el.audio.currentTime = 0;
+          el.audio.play().catch(() => {});
+        } else if (!el.audio.paused) {
+          // 以音频绝对实际播放时间纠正主时钟
+          const realTime = activeRow._startMs + (el.audio.currentTime * 1000);
+          if (Math.abs(realTime - state.currentTimeMs) > 120) {
+            state.currentTimeMs = realTime;
+          }
+        }
+      }
+
+      // 如果当前没有音频，时间自然步进
+      if (!activeRow.audioUrl || el.audio.paused) {
+        state.currentTimeMs += 16;
+      }
+
+      renderAtTime(state.currentTimeMs);
+      requestAnimationFrame(syncPlayback);
+    }
+
+    function renderAtTime(timeMs) {
+      state.currentTimeMs = Math.min(timeMs, state.totalDurationMs);
+      const rows = (state.deliverable && state.deliverable.rows) || [];
+
+      // 更新进度条与时间显示
+      const pct = (state.currentTimeMs / state.totalDurationMs) * 100;
+      el.progressFill.style.width = `${pct}%`;
+      el.timeText.innerText = `${formatSec(state.currentTimeMs / 1000)} / ${formatSec(state.totalDurationMs / 1000)}`;
+
+      // 收集并累积板书内容
+      let analysisHtml = '';
+      let solutionHtml = '';
+      let summaryHtml = '';
+      let currentSpeech = '';
+
+      rows.forEach((r, idx) => {
+        if (timeMs >= r._startMs) {
+          const content = formatBoardText(r.board || '');
+          if (content) {
+            if (r.stage === '分析') analysisHtml += (analysisHtml ? '\n' : '') + content;
+            else if (r.stage === '解答') solutionHtml += (solutionHtml ? '\n' : '') + content;
+            else if (r.stage === '总结') summaryHtml += (summaryHtml ? '\n' : '') + content;
+          }
+        }
+        if (timeMs >= r._startMs && timeMs < r._endMs) {
+          currentSpeech = r.speech || '';
+          state.activeRowIndex = idx;
+        }
+      });
+
+      el.regionAnalysis.innerHTML = analysisHtml;
+      el.regionSolution.innerHTML = solutionHtml;
+      el.regionSummary.innerHTML = summaryHtml;
+
+      if (currentSpeech) {
+        el.speechSubtitle.innerText = currentSpeech;
+      }
+    }
+
+    function formatSec(sec) {
+      const s = Math.floor(sec % 60);
+      const m = Math.floor(sec / 60);
+      return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    }
+
+    function play() {
+      if (!state.deliverable) return;
+      if (state.currentTimeMs >= state.totalDurationMs) {
+        state.currentTimeMs = 0;
+      }
+      state.isPlaying = true;
+      el.playIcon.innerText = '⏸';
+      el.playText.innerText = '暂停';
+      requestAnimationFrame(syncPlayback);
+    }
+
+    function pause() {
+      state.isPlaying = false;
+      el.playIcon.innerText = '▶';
+      el.playText.innerText = '播放';
+      el.audio.pause();
+    }
+
+    function seekToMs(targetMs) {
+      state.currentTimeMs = Math.max(0, Math.min(targetMs, state.totalDurationMs));
+      renderAtTime(state.currentTimeMs);
+      el.audio.dataset.currentRowId = '';
+    }
+
+    el.btnPlayPause.addEventListener('click', () => {
+      if (state.isPlaying) pause();
+      else play();
+    });
+
+    el.progressContainer.addEventListener('click', (e) => {
+      const rect = el.progressContainer.getBoundingClientRect();
+      const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+      seekToMs(ratio * state.totalDurationMs);
+    });
+
+    /* =========================================================================
+     * 6. 画布绘图编辑器核心 (Canvas Drawing Editor)
+     * ========================================================================= */
+    const cvs = el.drawingCanvas;
+    const ctx = el.drawingCtx;
+
+    function getCanvasPos(e) {
+      const rect = cvs.getBoundingClientRect();
+      const scaleX = cvs.width / rect.width;
+      const scaleY = cvs.height / rect.height;
+      return {
+        x: (e.clientX - rect.left) * scaleX,
+        y: (e.clientY - rect.top) * scaleY
+      };
+    }
+
+    function redrawAllDrawings() {
+      ctx.clearRect(0, 0, cvs.width, cvs.height);
+      state.drawing.history.forEach(item => {
+        drawHistoryItem(ctx, item);
+      });
+    }
+
+    function drawHistoryItem(context, item) {
+      context.save();
+      context.beginPath();
+      context.strokeStyle = item.color;
+      context.fillStyle = item.color;
+      context.lineWidth = item.size;
+      context.lineCap = 'round';
+      context.lineJoin = 'round';
+
+      if (item.isDashed) {
+        context.setLineDash([10, 8]);
+      } else {
+        context.setLineDash([]);
+      }
+
+      if (item.tool === 'highlighter') {
+        context.globalAlpha = 0.45;
+        context.lineWidth = item.size * 2.8;
+      }
+
+      if (item.tool === 'pen' || item.tool === 'highlighter') {
+        if (item.points && item.points.length > 1) {
+          context.moveTo(item.points[0].x, item.points[0].y);
+          for (let i = 1; i < item.points.length; i++) {
+            context.lineTo(item.points[i].x, item.points[i].y);
+          }
+          context.stroke();
+        }
+      } else if (item.tool === 'line') {
+        context.moveTo(item.x1, item.y1);
+        context.lineTo(item.x2, item.y2);
+        context.stroke();
+      } else if (item.tool === 'arrow') {
+        drawArrow(context, item.x1, item.y1, item.x2, item.y2, item.size);
+      } else if (item.tool === 'rect') {
+        context.strokeRect(item.x, item.y, item.w, item.h);
+      } else if (item.tool === 'circle') {
+        const rx = Math.abs(item.w / 2);
+        const ry = Math.abs(item.h / 2);
+        const cx = item.x + item.w / 2;
+        const cy = item.y + item.h / 2;
+        context.beginPath();
+        context.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+        context.stroke();
+      }
+      context.restore();
+    }
+
+    function drawArrow(context, fromx, fromy, tox, toy, width) {
+      const headlen = Math.max(14, width * 3.5);
+      const angle = Math.atan2(toy - fromy, tox - fromx);
+      context.moveTo(fromx, fromy);
+      context.lineTo(tox, toy);
+      context.stroke();
+      context.beginPath();
+      context.moveTo(tox, toy);
+      context.lineTo(tox - headlen * Math.cos(angle - Math.PI / 6), toy - headlen * Math.sin(angle - Math.PI / 6));
+      context.lineTo(tox - headlen * Math.cos(angle + Math.PI / 6), toy - headlen * Math.sin(angle + Math.PI / 6));
+      context.closePath();
+      context.fill();
+    }
+
+    // 鼠标/触控交互
+    cvs.addEventListener('mousedown', (e) => {
+      const pos = getCanvasPos(e);
+      state.drawing.isDrawing = true;
+      state.drawing.startX = pos.x;
+      state.drawing.startY = pos.y;
+      state.drawing.currentPath = [pos];
+
+      if (state.drawing.tool === 'eraser') {
+        eraseAt(pos.x, pos.y);
+      }
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      if (!state.drawing.isDrawing) return;
+      const pos = getCanvasPos(e);
+
+      if (state.drawing.tool === 'eraser') {
+        eraseAt(pos.x, pos.y);
+        return;
+      }
+
+      state.drawing.currentPath.push(pos);
+      redrawAllDrawings();
+
+      // 实时预览当前笔划
+      const currentItem = {
+        tool: state.drawing.tool,
+        color: state.drawing.color,
+        size: state.drawing.size,
+        isDashed: state.drawing.isDashed,
+        points: state.drawing.currentPath,
+        x1: state.drawing.startX,
+        y1: state.drawing.startY,
+        x2: pos.x,
+        y2: pos.y,
+        x: Math.min(state.drawing.startX, pos.x),
+        y: Math.min(state.drawing.startY, pos.y),
+        w: pos.x - state.drawing.startX,
+        h: pos.y - state.drawing.startY
+      };
+      drawHistoryItem(ctx, currentItem);
+    });
+
+    window.addEventListener('mouseup', (e) => {
+      if (!state.drawing.isDrawing) return;
+      state.drawing.isDrawing = false;
+      const pos = getCanvasPos(e);
+
+      if (state.drawing.tool === 'eraser') return;
+
+      const finishedItem = {
+        tool: state.drawing.tool,
+        color: state.drawing.color,
+        size: state.drawing.size,
+        isDashed: state.drawing.isDashed,
+        points: state.drawing.currentPath,
+        x1: state.drawing.startX,
+        y1: state.drawing.startY,
+        x2: pos.x,
+        y2: pos.y,
+        x: Math.min(state.drawing.startX, pos.x),
+        y: Math.min(state.drawing.startY, pos.y),
+        w: pos.x - state.drawing.startX,
+        h: pos.y - state.drawing.startY
+      };
+
+      state.drawing.history.push(finishedItem);
+      state.drawing.redoStack = [];
+      redrawAllDrawings();
+    });
+
+    function eraseAt(x, y) {
+      const radius = state.drawing.size * 5;
+      const prevLen = state.drawing.history.length;
+      state.drawing.history = state.drawing.history.filter(item => {
+        if (item.points) {
+          return !item.points.some(p => Math.hypot(p.x - x, p.y - y) < radius);
+        } else if (item.x1 !== undefined) {
+          return Math.hypot(item.x1 - x, item.y1 - y) >= radius && Math.hypot(item.x2 - x, item.y2 - y) >= radius;
+        }
+        return true;
+      });
+      if (state.drawing.history.length !== prevLen) {
+        redrawAllDrawings();
+      }
+    }
+
+    // 撤销 / 重做
+    el.btnUndo.addEventListener('click', () => {
+      if (state.drawing.history.length) {
+        state.drawing.redoStack.push(state.drawing.history.pop());
+        redrawAllDrawings();
+      }
+    });
+    el.btnRedo.addEventListener('click', () => {
+      if (state.drawing.redoStack.length) {
+        state.drawing.history.push(state.drawing.redoStack.pop());
+        redrawAllDrawings();
+      }
+    });
+    el.btnClearDraw.addEventListener('click', () => {
+      if (confirm('确定要清空所有自己手绘的标注和草稿吗？')) {
+        state.drawing.history = [];
+        state.drawing.redoStack = [];
+        redrawAllDrawings();
+      }
+    });
+
+    // 快捷键 Ctrl+Z / Ctrl+Y
+    window.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+        if (e.shiftKey) el.btnRedo.click();
+        else el.btnUndo.click();
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
+        el.btnRedo.click();
+      }
+    });
+
+    // 工具栏切换工具与属性
+    document.querySelectorAll('.tool-btn[data-tool]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.tool-btn[data-tool]').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        state.drawing.tool = btn.dataset.tool;
+      });
+    });
+
+    document.querySelectorAll('.color-picker-dot').forEach(dot => {
+      dot.addEventListener('click', () => {
+        document.querySelectorAll('.color-picker-dot').forEach(d => d.classList.remove('active'));
+        dot.classList.add('active');
+        state.drawing.color = dot.dataset.color;
+      });
+    });
+
+    document.querySelectorAll('.tool-btn[data-size]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.tool-btn[data-size]').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        state.drawing.size = Number(btn.dataset.size);
+      });
+    });
+
+    el.toolBtnDash.addEventListener('click', () => {
+      state.drawing.isDashed = !state.drawing.isDashed;
+      el.toolBtnDash.classList.toggle('active', state.drawing.isDashed);
+    });
+
+    el.btnToggleToolbar.addEventListener('click', () => {
+      el.drawingToolbar.classList.toggle('hidden');
+    });
+
+    el.btnToggleGuides.addEventListener('click', () => {
+      state.showGuides = !state.showGuides;
+      el.boardGuides.classList.toggle('visible', state.showGuides);
+    });
+
+    /* =========================================================================
+     * 7. 左下角 AI Agent 板书助教交互逻辑
+     * ========================================================================= */
+    el.agentTrigger.addEventListener('click', () => {
+      el.agentPanel.classList.toggle('minimized');
+    });
+    el.agentClose.addEventListener('click', () => {
+      el.agentPanel.classList.add('minimized');
+    });
+
+    // Agent 一键预设: 几何辅助虚线
+    document.getElementById('preset-geo-line').addEventListener('click', () => {
+      setAgentTool('line', '#2563eb', 4, true);
+      flashAgentMessage('已为您切换为「几何蓝 辅助虚线」工具！直接在画布上拖拽即可画出虚线。');
+    });
+
+    // Agent 一键预设: 题眼圈画高亮
+    document.getElementById('preset-highlight').addEventListener('click', () => {
+      setAgentTool('highlighter', '#facc15', 14, false);
+      flashAgentMessage('已为您切换为「柔光荧光划词笔」！直接抹过题目条件即可高亮。');
+    });
+
+    // Agent 一键预设: 达芬奇手写草稿笔
+    document.getElementById('preset-handwrite-pen').addEventListener('click', () => {
+      setAgentTool('pen', '#1e293b', 2, false);
+      flashAgentMessage('已为您切换为「达芬奇手写草稿笔」！适合演算验算。');
+    });
+
+    // Agent 一键预设: 四区安全网格开关
+    document.getElementById('preset-toggle-guides').addEventListener('click', () => {
+      state.showGuides = !state.showGuides;
+      el.boardGuides.classList.toggle('visible', state.showGuides);
+      flashAgentMessage(state.showGuides ? '已为您投射四区排版安全网格参考线！' : '已为您隐藏排版参考线。');
+    });
+
+    // Agent FAQ 引导
+    document.getElementById('faq-aux-line').addEventListener('click', () => {
+      setAgentTool('line', '#2563eb', 4, true);
+      flashAgentMessage('画辅助线诀窍：按住鼠标左键从几何顶点拖出，松开即成虚线！');
+    });
+    document.getElementById('faq-mark-point').addEventListener('click', () => {
+      setAgentTool('highlighter', '#facc15', 14, false);
+      flashAgentMessage('划重点诀窍：选择荧光笔在题目关键数字上横向滑过，文字自动透显。');
+    });
+    document.getElementById('faq-erase').addEventListener('click', () => {
+      setAgentTool('eraser', '#1e293b', 8, false);
+      flashAgentMessage('点击橡皮擦后在画错的笔划上滑动即可擦除，或直接按 Ctrl+Z 撤销！');
+    });
+    document.getElementById('faq-export').addEventListener('click', () => {
+      flashAgentMessage('是的！点击右上角「导出板书图片」，会自动将板书与您画的几何辅助线完整合成为高清图！');
+    });
+
+    function setAgentTool(toolName, color, size, isDashed) {
+      state.drawing.tool = toolName;
+      state.drawing.color = color;
+      state.drawing.size = size;
+      state.drawing.isDashed = isDashed;
+
+      // 更新顶部工具栏激活高亮
+      document.querySelectorAll('.tool-btn[data-tool]').forEach(b => {
+        b.classList.toggle('active', b.dataset.tool === toolName);
+      });
+      document.querySelectorAll('.color-picker-dot').forEach(d => {
+        d.classList.toggle('active', d.dataset.color === color);
+      });
+      document.querySelectorAll('.tool-btn[data-size]').forEach(s => {
+        s.classList.toggle('active', Number(s.dataset.size) === size);
+      });
+      el.toolBtnDash.classList.toggle('active', isDashed);
+
+      // 确保绘图工具栏处于可见状态
+      el.drawingToolbar.classList.remove('hidden');
+    }
+
+    function flashAgentMessage(msg) {
+      el.speechSubtitle.innerText = `🤖 助教提示：${msg}`;
+      el.agentPanel.classList.add('minimized');
+    }
+
+    /* =========================================================================
+     * 8. 导出板书高保真 PNG (Canvas Drawing + Board 合成)
+     * ========================================================================= */
+    el.btnExportPng.addEventListener('click', () => {
+      const outCvs = document.createElement('canvas');
+      outCvs.width = 1726;
+      outCvs.height = 980;
+      const outCtx = outCvs.getContext('2d');
+
+      // 1. 底色
+      outCtx.fillStyle = '#fbfaf6';
+      outCtx.fillRect(0, 0, 1726, 980);
+
+      // 2. 绘制微课文字
+      outCtx.fillStyle = '#1e293b';
+      outCtx.font = '28px "PingFang SC", "Microsoft YaHei", sans-serif';
+      outCtx.fillText('【题目】' + (el.regionTopic.innerText || ''), 1726 * 0.057, 980 * 0.14, 1726 * 0.44);
+
+      outCtx.fillStyle = '#c9302c';
+      outCtx.font = '34px "LikeJianJianTi", cursive, sans-serif';
+      const anaLines = (el.regionAnalysis.innerText || '').split('\n');
+      anaLines.forEach((l, i) => {
+        outCtx.fillText(l, 1726 * 0.057, 980 * 0.44 + (i * 50), 1726 * 0.44);
+      });
+
+      outCtx.fillStyle = '#1e293b';
+      const solLines = (el.regionSolution.innerText || '').split('\n');
+      solLines.forEach((l, i) => {
+        outCtx.fillText(l, 1726 * 0.537, 980 * 0.14 + (i * 50), 1726 * 0.43);
+      });
+
+      const sumLines = (el.regionSummary.innerText || '').split('\n');
+      sumLines.forEach((l, i) => {
+        outCtx.fillText(l, 1726 * 0.537, 980 * 0.70 + (i * 50), 1726 * 0.43);
+      });
+
+      // 3. 叠加用户自定义绘制层
+      outCtx.drawImage(cvs, 0, 0);
+
+      // 4. 触发下载
+      const link = document.createElement('a');
+      link.download = `板书微课_${new Date().toISOString().slice(0,10)}.png`;
+      link.href = outCvs.toDataURL('image/png');
+      link.click();
+    });
+
+    // 载入外部 JSON 文件
+    el.btnLoadJson.addEventListener('click', () => {
+      el.fileJsonInput.click();
+    });
+    el.fileJsonInput.addEventListener('change', (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (evt) => {
+        try {
+          const parsed = JSON.parse(evt.target.result);
+          loadDeliverable(parsed);
+        } catch (err) {
+          alert('解析 JSON 文件失败：' + err.message);
+        }
+      };
+      reader.readAsText(file);
+    });
+
+    // 启动自检与初始化
+    window.addEventListener('DOMContentLoaded', () => {
+      resizeBoard();
+      initDeliverableData();
+    });
+  </script>
+</body>
+</html>

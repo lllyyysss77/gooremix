@@ -1430,7 +1430,7 @@ function openHanddrawPlayer() {
   try {
     localStorage.setItem('agent-b-deliverable', JSON.stringify(payload))
   } catch {}
-  window.open('/deliverable/handdraw-player.html', '_blank')
+  window.open('/deliverable/row-player.html', '_blank')
 }
 
 function downloadDeliverableJson() {
@@ -2016,7 +2016,7 @@ function isRefineFieldEqual(original, refined) {
               </div>
 
               <!-- 统一教学微课演播与交付物单页 -->
-              <div v-if="false" class="action-btn-group group-deliverable">
+              <div class="action-btn-group group-deliverable">
                 <a-button
                   type="primary"
                   class="btn-open-handdraw-player"

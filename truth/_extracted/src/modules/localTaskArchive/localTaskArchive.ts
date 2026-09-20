@@ -108,6 +108,22 @@ export async function saveProjectToLocalTaskFolder(project: TeachingProject): Pr
   };
 }
 
+export function downloadTeachingProjectJson(project: TeachingProject): string {
+  const sanitized = sanitizeProjectForArchive(project);
+  const jsonContent = JSON.stringify(sanitized, null, 2);
+  const blob = new Blob([jsonContent], { type: 'application/json;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const fileName = `${createTaskFolderBaseName(project)}.json`;
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+  return fileName;
+}
+
 export async function selectDefaultLocalTaskFolder(): Promise<{ directoryName: string }> {
   const picker = (window as WindowWithDirectoryPicker).showDirectoryPicker;
   if (!picker) {
