@@ -4,7 +4,7 @@
    current 指针文件记录当前活跃的文件名
    A 写、修缮层改写、B 读，三者完全解耦 */
 
-import { writeFileSync, readFileSync, existsSync, readdirSync, mkdirSync } from 'fs'
+import { writeFileSync, readFileSync, existsSync, readdirSync, mkdirSync, unlinkSync } from 'fs'
 import { resolve, dirname } from 'path'
 import { fileURLToPath } from 'url'
 import { isOptions, readJsonBody, sendJson } from './http.js'
@@ -102,9 +102,39 @@ export function readCurrentHandoff() {
   }
 }
 
+function clearOldOutputsIfProblemChanged(prevHandoff, nextHandoff) {
+  const prevText = (prevHandoff?.problemText || '').trim()
+  const nextText = (nextHandoff?.problemText || '').trim()
+  if (prevText && nextText && prevText !== nextText) {
+    try {
+      const boardResultPointer = resolve(PUBLIC_DIR, 'board-result', 'current.json')
+      if (existsSync(boardResultPointer)) unlinkSync(boardResultPointer)
+    } catch (_) {}
+    try {
+      const deliverablePointer = resolve(PUBLIC_DIR, 'deliverable', 'current.json')
+      if (existsSync(deliverablePointer)) unlinkSync(deliverablePointer)
+    } catch (_) {}
+    try {
+      const deliverableHtml = resolve(PUBLIC_DIR, 'deliverable', 'current.html')
+      if (existsSync(deliverableHtml)) unlinkSync(deliverableHtml)
+    } catch (_) {}
+    try {
+      const audioCacheDir = resolve(PUBLIC_DIR, 'audio-cache')
+      if (existsSync(audioCacheDir)) {
+        for (const file of readdirSync(audioCacheDir)) {
+          try { unlinkSync(resolve(audioCacheDir, file)) } catch (_) {}
+        }
+      }
+    } catch (_) {}
+  }
+}
+
 export function writeHandoffFile(handoff) {
   ensureHandoffDir()
+  const current = readCurrentHandoff()
   const completeHandoff = ensureHandoffCompleteness(handoff)
+  clearOldOutputsIfProblemChanged(current?.handoff, completeHandoff)
+
   const projectCode = genProjectCode()
   const filename = handoffFilename(projectCode)
   const filePath = fullPath(filename)
@@ -125,6 +155,7 @@ export function overwriteCurrentHandoff(handoff) {
   if (!current) {
     return writeHandoffFile(completeHandoff)
   }
+  clearOldOutputsIfProblemChanged(current?.handoff, completeHandoff)
   const filePath = fullPath(current.filename)
   writeFileSync(filePath, JSON.stringify(completeHandoff, null, 2), 'utf-8')
   return { projectCode: current.projectCode, filename: current.filename }

@@ -19,9 +19,9 @@
 // @b-track-ownership: B 寿命轨 / 语音时序 / note: '时间轴'
 // @b-track-generation: 等待按 C 素材候选和 A 轨时序生成 B 寿命。生成 B 寿命后自动出现图层
 
-import { PauseCircleOutlined, PlayCircleOutlined } from '@ant-design/icons';
+import { PauseCircleOutlined, PlayCircleOutlined, ZoomInOutlined, ZoomOutOutlined } from '@ant-design/icons';
 import { Button, Card, Slider, Space, Tag, Tooltip, Typography } from 'antd';
-import { useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { TimelineClip, TimelineTrack } from '../domain/teachingProject';
 import { useVoiceTrackAudio } from '../modules/audioPlayback/useVoiceTrackAudio';
 import { TimelineTrackRow } from './TimelineTrackRow';
@@ -78,6 +78,58 @@ export function TeachingTimeline({
     }, 200);
   };
 
+  const [zoom, setZoom] = useState(1);
+  const timelineScrollRef = useRef<HTMLDivElement | null>(null);
+
+  const minZoom = 1;
+  const maxZoom = 6;
+  const zoomStep = 0.2;
+
+  const handleZoomIn = () => {
+    setZoom((prev) => Math.min(maxZoom, Number((prev + zoomStep).toFixed(1))));
+  };
+
+  const handleZoomOut = () => {
+    setZoom((prev) => Math.max(minZoom, Number((prev - zoomStep).toFixed(1))));
+  };
+
+  const handleResetZoom = () => {
+    setZoom(1);
+  };
+
+  /** 支持滚轮缩放：Ctrl / Cmd / Alt + 滚轮实现平滑缩放，方便细粒度对齐短片段 */
+  useEffect(() => {
+    const el = timelineScrollRef.current;
+    if (!el) return;
+
+    const handleWheelZoom = (e: WheelEvent) => {
+      if (e.ctrlKey || e.metaKey || e.altKey) {
+        e.preventDefault();
+        const delta = e.deltaY < 0 ? 0.2 : -0.2;
+        setZoom((prev) => Math.max(minZoom, Math.min(maxZoom, Number((prev + delta).toFixed(1)))));
+      }
+    };
+
+    el.addEventListener('wheel', handleWheelZoom, { passive: false });
+    return () => {
+      el.removeEventListener('wheel', handleWheelZoom);
+    };
+  }, []);
+
+  /** 缩放状态下拖动或播放时自动将播放头滚动至可视区域 */
+  useEffect(() => {
+    if (!timelineScrollRef.current || zoom <= 1) return;
+    const container = timelineScrollRef.current;
+    const ratio = Math.min(1, Math.max(0, playheadMs / timelineDurationMs));
+    const playheadPx = ratio * container.scrollWidth;
+    if (playheadPx < container.scrollLeft || playheadPx > container.scrollLeft + container.clientWidth) {
+      container.scrollTo({
+        left: Math.max(0, playheadPx - container.clientWidth / 2),
+        behavior: 'smooth',
+      });
+    }
+  }, [playheadMs, timelineDurationMs, zoom]);
+
   const handlePlayheadChange = (nextPlayheadMs: number) => {
     onSetLivePlayhead(null);
     onSetPlayhead(nextPlayheadMs);
@@ -114,34 +166,85 @@ export function TeachingTimeline({
           value={playheadMs}
         />
       </div>
-      <div className="timeline">
-        {tracks.map((track) => {
-          const trackClips = clips.filter((clip) => clip.trackId === track.id);
-          return track.kind === 'voice' ? (
-            <VoiceTrack
-              clips={trackClips}
-              boardTimingClips={boardTimingClips}
-              durationMs={timelineDurationMs}
-              key={track.id}
-              onSelectClip={onSelectClip}
-              playheadMs={playheadMs}
-              selectedClipId={selectedClipId}
-              track={track}
-              onUpdateBoardTiming={onUpdateBoardTiming}
+      <div className="timeline-zoom-bar">
+        <Space align="center" size={8} wrap>
+          <Text strong style={{ fontSize: '12px' }}>时间轴缩放</Text>
+          <Tooltip title="缩小时间轴 (Ctrl + 滚轮向下)">
+            <Button
+              disabled={zoom <= minZoom}
+              icon={<ZoomOutOutlined />}
+              onClick={handleZoomOut}
+              size="small"
             />
-          ) : (
-            <TimelineTrackRow
-              clips={trackClips}
-              durationMs={timelineDurationMs}
-              key={track.id}
-              onSelectClip={onSelectClip}
-              onUpdateBoardTiming={onUpdateBoardTiming}
-              playheadMs={playheadMs}
-              selectedClipId={selectedClipId}
-              track={track}
+          </Tooltip>
+          <Slider
+            className="timeline-zoom-slider"
+            max={maxZoom}
+            min={minZoom}
+            onChange={(val) => setZoom(val)}
+            step={0.1}
+            tooltip={{ formatter: (val) => `${Math.round((val ?? 1) * 100)}%` }}
+            value={zoom}
+          />
+          <Tooltip title="放大时间轴 (Ctrl + 滚轮向上)">
+            <Button
+              disabled={zoom >= maxZoom}
+              icon={<ZoomInOutlined />}
+              onClick={handleZoomIn}
+              size="small"
             />
-          );
-        })}
+          </Tooltip>
+          <Button
+            disabled={zoom === 1}
+            onClick={handleResetZoom}
+            size="small"
+          >
+            100%
+          </Button>
+          <Tag color={zoom > 1 ? 'blue' : 'default'} style={{ margin: 0 }}>
+            {Math.round(zoom * 100)}%
+          </Tag>
+          <Text type="secondary" style={{ fontSize: '11px' }}>
+            (滑块拖动或 Ctrl/Cmd + 滚轮缩放，便捷微调细粒度片段时长)
+          </Text>
+        </Space>
+      </div>
+      <div className="timeline-scroll-container" ref={timelineScrollRef}>
+        <div
+          className="timeline"
+          style={{
+            minWidth: zoom > 1 ? `${zoom * 100}%` : '100%',
+            transition: 'min-width 0.12s ease-out',
+          }}
+        >
+          {tracks.map((track) => {
+            const trackClips = clips.filter((clip) => clip.trackId === track.id);
+            return track.kind === 'voice' ? (
+              <VoiceTrack
+                clips={trackClips}
+                boardTimingClips={boardTimingClips}
+                durationMs={timelineDurationMs}
+                key={track.id}
+                onSelectClip={onSelectClip}
+                playheadMs={playheadMs}
+                selectedClipId={selectedClipId}
+                track={track}
+                onUpdateBoardTiming={onUpdateBoardTiming}
+              />
+            ) : (
+              <TimelineTrackRow
+                clips={trackClips}
+                durationMs={timelineDurationMs}
+                key={track.id}
+                onSelectClip={onSelectClip}
+                onUpdateBoardTiming={onUpdateBoardTiming}
+                playheadMs={playheadMs}
+                selectedClipId={selectedClipId}
+                track={track}
+              />
+            );
+          })}
+        </div>
       </div>
       <BoardClipsTemporaryView
         clips={clips}

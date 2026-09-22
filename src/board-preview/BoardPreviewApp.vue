@@ -36,7 +36,7 @@ import {
   CANVAS_H as DESIGN_H,
 } from '../utils/canvasCoords.js'
 import { BOARD_LAYOUT } from '../utils/boardLayout.js'
-import { renderProblemHtml } from '../utils/mathText.js'
+import { renderProblemHtml, renderXiaXiaHandwrittenHtml } from '../utils/mathText.js'
 import {
   exportSpeechMarkdown as doExportSpeechMarkdown,
   exportElementsMarkdown as doExportElementsMarkdown,
@@ -92,6 +92,7 @@ const checkInfo = ref({
   asrPolished: false,
 })
 const rows = ref([])
+const activeStepIndex = ref(null)
 const actionSpec = computed(() => rows.value.flatMap((row, rowIndex) => (
   Array.isArray(row?.actionSpec)
     ? row.actionSpec.map((action, actionIndex) => ({
@@ -759,6 +760,8 @@ function getStageTagColor(stage) {
             :board-rows="rows"
             :action-spec="actionSpec"
             :interactive="false"
+            :active-step-index="activeStepIndex"
+            @step-change="activeStepIndex = $event"
             @update:topic-layout="onTopicLayoutUpdated"
             @update:problem-text="onProblemTextUpdated"
           />
@@ -923,7 +926,14 @@ function getStageTagColor(stage) {
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="(row, idx) in filteredRows" :key="idx">
+                  <tr
+                    v-for="(row, idx) in filteredRows"
+                    :key="idx"
+                    :class="{ 'row-selected': activeStepIndex === idx }"
+                    class="interactive-step-row"
+                    title="点击在上方画布中精准定位并揭开至此步"
+                    @click="activeStepIndex = idx"
+                  >
                     <td class="col-center index-num">{{ idx + 1 }}</td>
                     <td class="col-center">
                       <a-tag :color="getStageTagColor(row.stage)">{{ row.stage }}</a-tag>
@@ -935,7 +945,7 @@ function getStageTagColor(stage) {
                     <td class="col-board">
                       <div class="board-snippet">
                         <span class="snippet-label">板书:</span>
-                        <span class="board-text">{{ formatBoardDisplay(row.board) }}</span>
+                        <span class="board-text" v-html="renderXiaXiaHandwrittenHtml(formatBoardDisplay(row.board))"></span>
                       </div>
                       <div v-if="row.actionSpec && row.actionSpec.length" class="actions-badge-list">
                         <span
@@ -1598,6 +1608,23 @@ function getStageTagColor(stage) {
   padding: 12px 14px;
   border-bottom: 1px solid #f1f5f9;
   vertical-align: top;
+}
+
+.interactive-step-row {
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.interactive-step-row:hover {
+  background-color: #f8fafc;
+}
+
+.interactive-step-row.row-selected {
+  background-color: #ecfdf5 !important;
+}
+
+.interactive-step-row.row-selected td {
+  border-bottom-color: #a7f3d0;
 }
 
 .col-center {

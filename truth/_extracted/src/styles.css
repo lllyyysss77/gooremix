@@ -690,6 +690,45 @@ button {
   padding: 8px;
 }
 
+.timeline-zoom-bar {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(232, 166, 66, 0.18);
+  border-radius: 10px;
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 8px;
+  padding: 4px 10px;
+}
+
+.timeline-zoom-slider.ant-slider {
+  margin: 0 4px;
+  width: 130px;
+}
+
+.timeline-scroll-container {
+  border-radius: 12px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 6px;
+  position: relative;
+  scrollbar-gutter: stable;
+  width: 100%;
+}
+
+.timeline-scroll-container::-webkit-scrollbar {
+  height: 6px;
+}
+
+.timeline-scroll-container::-webkit-scrollbar-thumb {
+  background: rgba(99, 127, 169, 0.35);
+  border-radius: 4px;
+}
+
+.timeline-scroll-container::-webkit-scrollbar-thumb:hover {
+  background: rgba(99, 127, 169, 0.6);
+}
+
 .timeline-play-button.ant-btn {
   box-shadow: 0 8px 18px rgba(232, 166, 66, 0.22);
 }

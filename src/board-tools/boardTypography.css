@@ -5,3 +5,121 @@
   font-weight: normal;
   font-display: swap;
 }
+
+@font-face {
+  font-family: "LikeJianJianTi";
+  src: local("LikeJianJianTi"), url("/fonts/pingfang-qiaomu.ttf") format("truetype");
+  font-style: normal;
+  font-weight: normal;
+  font-display: swap;
+}
+
+/* 夏夏手写公式与最简符号样式（纯手写字体，拒绝 TeX 印刷体） */
+.hand-sym {
+  display: inline-block;
+  font-family: inherit;
+  vertical-align: baseline;
+}
+
+.hand-sym.hand-times {
+  font-family: inherit;
+  margin: 0 0.18em;
+  font-size: 0.95em;
+  font-weight: 500;
+  display: inline-block;
+}
+
+.hand-sym.hand-div {
+  font-family: inherit;
+  margin: 0 0.22em;
+  font-size: 1.05em;
+  display: inline-block;
+}
+
+/* 加减号：加号，下面加一个小减号 */
+.hand-sym.hand-pm {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  vertical-align: middle;
+  line-height: 0.7;
+  font-family: inherit;
+  margin: 0 0.18em;
+  transform: translateY(-1px);
+}
+.hand-sym.hand-pm .pm-plus {
+  font-size: 0.92em;
+  line-height: 0.8;
+}
+.hand-sym.hand-pm .pm-minus {
+  font-size: 0.88em;
+  line-height: 0.4;
+  margin-top: 1px;
+}
+
+/* 平方与角标：右上角本字体缩小写 */
+.hand-sup {
+  font-size: 0.62em !important;
+  vertical-align: super !important;
+  line-height: 0 !important;
+  font-family: inherit !important;
+  margin-left: 0.08em;
+}
+
+.hand-sub {
+  font-size: 0.62em !important;
+  vertical-align: sub !important;
+  line-height: 0 !important;
+  font-family: inherit !important;
+  margin-left: 0.08em;
+}
+
+/* 分数：手写上下分数横线，纯手写字体 */
+.hand-fraction {
+  display: inline-flex;
+  flex-direction: column;
+  vertical-align: middle;
+  text-align: center;
+  padding: 0 0.18em;
+  line-height: 1;
+  font-family: inherit;
+  margin: 0 0.15em;
+}
+
+.hand-fraction-num,
+.hand-fraction-den {
+  display: block;
+  font-size: 0.85em;
+  line-height: 1.05;
+  font-family: inherit;
+  white-space: nowrap;
+}
+
+.hand-fraction-bar {
+  display: block;
+  height: 1.6px;
+  background-color: currentColor;
+  margin: 2px 0;
+  width: 100%;
+  border-radius: 1px;
+}
+
+/* 根号 */
+.hand-sqrt {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: baseline;
+  font-family: inherit;
+}
+.hand-sqrt .sqrt-rad {
+  font-size: 1.1em;
+  margin-right: 1px;
+}
+.hand-sqrt .sqrt-body {
+  border-top: 1.5px solid currentColor;
+  padding-top: 1px;
+  padding-left: 2px;
+  padding-right: 2px;
+}
+

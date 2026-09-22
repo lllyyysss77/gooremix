@@ -1,171 +1,152 @@
 /**
- * 教学板书公式渲染（KaTeX）
- * 全项目统一：数字、分数、根号、角度、乘除等走这里
- * 参考 teaching-cut FormulaText，第1步先做预览轻量版
+ * 夏夏教学板书与题目公式渲染（纯手写字体最简符号规范）
+ * 核心原则：能不要用 TeX 就不用，全量采用手写字体与最简手写符号
+ * - 乘号：英文小写 x
+ * - 除号：手写横线上下两个点 (÷ / .-.)
+ * - 分数：手写上下分数横线（分子在上位、中细横线、分母在下位，纯手写字体）
+ * - 加减号：加号，下面加一个小减号 (± / hand-pm)
+ * - 平方与指数：右上角本字体缩小写 (hand-sup)
+ * - 字符转义安全保留，杜绝字符转义丢失
  */
-import katex from 'katex'
-import 'katex/dist/katex.min.css'
-
-const LATEX_HINT = /\\[a-zA-Z]|[_^]\{|\$\$|\$|\\\(|\\\[/
-const CJK = /[\u4e00-\u9fff\uff00-\uffef]/
-const SIMPLE_FRACTION = /(^|[^\w./])(\d+)\/(\d+)(?=$|[^\w./])/g
 
 function escapeHtml(s) {
-  return String(s)
+  return String(s ?? '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
-}
-
-function promoteSimpleFractions(text) {
-  return String(text || '').replace(SIMPLE_FRACTION, '$1\\frac{$2}{$3}')
-}
-
-function renderKatex(math, displayMode = false) {
-  try {
-    return katex.renderToString(math, {
-      throwOnError: false,
-      output: 'html',
-      strict: 'ignore',
-      displayMode,
-      trust: false,
-    })
-  } catch {
-    return escapeHtml(math)
-  }
-}
-
-/** 抽出 $...$ / $$...$$ / \(...\) / \[...\] */
-function renderDelimited(text) {
-  const src = String(text || '')
-  const parts = []
-  let i = 0
-  while (i < src.length) {
-    if (src.startsWith('$$', i)) {
-      const end = src.indexOf('$$', i + 2)
-      if (end > i) {
-        parts.push(renderKatex(src.slice(i + 2, end).trim(), true))
-        i = end + 2
-        continue
-      }
-    }
-    if (src[i] === '$') {
-      const end = src.indexOf('$', i + 1)
-      if (end > i) {
-        parts.push(renderKatex(src.slice(i + 1, end).trim(), false))
-        i = end + 1
-        continue
-      }
-    }
-    if (src.startsWith('\\[', i)) {
-      const end = src.indexOf('\\]', i + 2)
-      if (end > i) {
-        parts.push(renderKatex(src.slice(i + 2, end).trim(), true))
-        i = end + 2
-        continue
-      }
-    }
-    if (src.startsWith('\\(', i)) {
-      const end = src.indexOf('\\)', i + 2)
-      if (end > i) {
-        parts.push(renderKatex(src.slice(i + 2, end).trim(), false))
-        i = end + 2
-        continue
-      }
-    }
-    // plain until next delimiter or bare latex command
-    let j = i + 1
-    while (j < src.length) {
-      if (src.startsWith('$$', j) || src[j] === '$' || src.startsWith('\\[', j) || src.startsWith('\\(', j)) break
-      if (src[j] === '\\' && j + 1 < src.length && /[a-zA-Z]/.test(src[j + 1])) break
-      j++
-    }
-    const chunk = src.slice(i, j)
-    if (chunk.includes('\\') && LATEX_HINT.test(chunk)) {
-      parts.push(renderMixedBareLatex(chunk))
-    } else {
-      parts.push(escapeHtml(chunk).replace(/\n/g, '<br>'))
-    }
-    i = j
-  }
-  return parts.join('')
-}
-
-/** 中文夹裸 LaTeX：\frac{1}{2}、\sqrt{3}、60^\circ */
-function renderMixedBareLatex(text) {
-  const parts = []
-  let i = 0
-  const src = String(text || '')
-  while (i < src.length) {
-    if (src[i] === '\\' && i + 1 < src.length && /[a-zA-Z]/.test(src[i + 1])) {
-      let j = i
-      let depth = 0
-      while (j < src.length) {
-        const ch = src[j]
-        if (ch === '{') {
-          depth++
-          j++
-          continue
-        }
-        if (ch === '}') {
-          depth--
-          j++
-          continue
-        }
-        if (depth === 0 && CJK.test(ch)) break
-        // stop bare command at whitespace when depth 0 after command body started
-        if (depth === 0 && j > i + 1 && /[\s，。；：！？、]/.test(ch)) break
-        j++
-      }
-      // include trailing ^\circ or _x loosely
-      while (j < src.length && /[\^_]/.test(src[j])) {
-        j++
-        if (src[j] === '{') {
-          let d = 0
-          while (j < src.length) {
-            if (src[j] === '{') d++
-            if (src[j] === '}') {
-              d--
-              j++
-              if (d === 0) break
-              continue
-            }
-            j++
-          }
-        } else if (src[j]) {
-          j++
-        }
-      }
-      const mathPart = src.slice(i, j).trim()
-      parts.push(renderKatex(mathPart, false))
-      i = j
-    } else {
-      let j = i
-      while (
-        j < src.length &&
-        !(src[j] === '\\' && j + 1 < src.length && /[a-zA-Z]/.test(src[j + 1]))
-      ) {
-        j++
-      }
-      parts.push(escapeHtml(src.slice(i, j)).replace(/\n/g, '<br>'))
-      i = j
-    }
-  }
-  return parts.join('')
+    .replace(/'/g, '&#39;')
 }
 
 /**
- * 把题文渲染成可安全 v-html 的 HTML
- * - 普通中文/数字原样（转义）
- * - 分数 3/4、LaTeX 命令、$...$ 走 KaTeX
+ * 将 LaTeX 符号与数学标记转换为夏夏规范的手写 HTML
+ * 保证所有字符使用父容器手写字体（LikeJianJianTi / 楷体栈），不用 TeX 印刷体
+ */
+export function renderXiaXiaHandwrittenHtml(text) {
+  let raw = String(text ?? '').trim()
+  if (!raw) return ''
+
+  // 1. 剥离可能存在的外部 $...$ 或 $$...$$ 或 \(...\) 或 \[...\] 包装
+  raw = raw
+    .replace(/^\$\$(.+)\$\$$/s, '$1')
+    .replace(/^\$(.+)\$$/s, '$1')
+    .replace(/^\\\[(.+)\\\]$/s, '$1')
+    .replace(/^\\\((.+)\\\)$/s, '$1')
+    .trim()
+
+  // 2. 基础 HTML 实体转义，保证字符转义不丢失、不产生 XSS
+  let safe = escapeHtml(raw)
+
+  // 3. 递归/循环处理 LaTeX 分数 \frac{分子}{分母} 与 \dfrac{分子}{分母}
+  // 匹配 \frac{...}{...}
+  const fracRegex = /\\(?:d)?frac\{([^{}]+)\}\{([^{}]+)\}/g
+  while (fracRegex.test(safe)) {
+    safe = safe.replace(fracRegex, (m, num, den) => {
+      const cleanNum = convertXiaXiaSymbols(num)
+      const cleanDen = convertXiaXiaSymbols(den)
+      return `<span class="hand-fraction"><span class="hand-fraction-num">${cleanNum}</span><span class="hand-fraction-bar"></span><span class="hand-fraction-den">${cleanDen}</span></span>`
+    })
+  }
+
+  // 4. 处理单层简单数字分数，如 3/4（前后非英文单词或路径时）
+  safe = safe.replace(/(^|[^\w./])(\d+)\/(\d+)(?=$|[^\w./])/g, (m, prefix, num, den) => {
+    return `${prefix}<span class="hand-fraction"><span class="hand-fraction-num">${num}</span><span class="hand-fraction-bar"></span><span class="hand-fraction-den">${den}</span></span>`
+  })
+
+  // 5. 符号转换（乘号、除号、平方/角标、加减号、常见几何符号）
+  safe = convertXiaXiaSymbols(safe)
+
+  // 6. 换行转换为 <br>
+  safe = safe.replace(/\n/g, '<br>')
+
+  return safe
+}
+
+/**
+ * 转换各种数学符号为夏夏最简手写符号
+ */
+function convertXiaXiaSymbols(str) {
+  let s = str
+
+  // (1) 乘号：英文小写 x（夏夏专用规范：乘号不用 \times，直接用手写英文小写 x）
+  s = s
+    .replace(/\\times\b/g, '<span class="hand-sym hand-times">x</span>')
+    .replace(/\\cdot\b/g, '<span class="hand-sym hand-times">x</span>')
+    .replace(/×/g, '<span class="hand-sym hand-times">x</span>')
+    .replace(/✕/g, '<span class="hand-sym hand-times">x</span>')
+    .replace(/✖/g, '<span class="hand-sym hand-times">x</span>')
+
+  // (2) 除号：分数的写法，英文的 .-. 两个点在横线上（使用手写标准除号样式）
+  s = s.replace(/\\div\b|÷/g, '<span class="hand-sym hand-div">÷</span>')
+
+  // (3) 加减号：加号，下面加一个小减号
+  s = s.replace(/\\pm\b|±/g, '<span class="hand-sym hand-pm"><span class="pm-plus">+</span><span class="pm-minus">-</span></span>')
+
+  // (4) 平方与角标：在右上角本字体缩小写
+  // 支持 ^{2}、^{...}、^2、^3、以及已经是字符的 ²、³
+  s = s.replace(/\^\{([^}]+)\}/g, '<sup class="hand-sup">$1</sup>')
+  s = s.replace(/\^([0-9a-zA-Z\u4e00-\u9fa5]+)/g, '<sup class="hand-sup">$1</sup>')
+  s = s.replace(/²/g, '<sup class="hand-sup">2</sup>')
+  s = s.replace(/³/g, '<sup class="hand-sup">3</sup>')
+
+  // (5) 下角标：在右下角本字体缩小写
+  s = s.replace(/_\{([^}]+)\}/g, '<sub class="hand-sub">$1</sub>')
+  s = s.replace(/_([0-9a-zA-Z]+)/g, '<sub class="hand-sub">$1</sub>')
+
+  // (6) 根号
+  s = s.replace(/\\sqrt\{([^}]+)\}/g, '<span class="hand-sqrt"><span class="sqrt-rad">√</span><span class="sqrt-body">$1</span></span>')
+
+  // (7) 常用几何与关系符号
+  s = s
+    .replace(/\\approx\b/g, '≈')
+    .replace(/\\le\b|\\leq\b/g, '≤')
+    .replace(/\\ge\b|\\geq\b/g, '≥')
+    .replace(/\\ne\b|\\neq\b/g, '≠')
+    .replace(/\\pi\b/g, 'π')
+    .replace(/\\circ\b|\^\\circ/g, '°')
+    .replace(/\\triangle\b/g, '△')
+    .replace(/\\angle\b/g, '∠')
+    .replace(/\\perp\b/g, '⊥')
+    .replace(/\\parallel\b/g, '∥')
+
+  // (8) 清理剩余的 LaTeX 辅助文本命令与间距命令（转为纯净文本）
+  s = s
+    .replace(/\\(?:text|mathrm|mathbf|mathit)\{([^}]+)\}/g, '$1')
+    .replace(/\\[,;!]/g, ' ')
+    .replace(/\\quad\b/g, ' &nbsp; ')
+    .replace(/\\qquad\b/g, ' &nbsp;&nbsp; ')
+    .replace(/\\left\b|\\right\b/g, '')
+
+  return s
+}
+
+/**
+ * 纯文本导出与口播使用的最简手写符号纯文本转换
+ */
+export function convertXiaXiaPlainMath(text) {
+  let s = String(text ?? '')
+  s = s
+    .replace(/\\times\b|×|✕|✖/g, 'x')
+    .replace(/\\div\b/g, '÷')
+    .replace(/\\pm\b/g, '±')
+    .replace(/\\frac\{([^{}]+)\}\{([^{}]+)\}/g, '$1/$2')
+    .replace(/\^\{?2\}?|²/g, '²')
+    .replace(/\^\{?3\}?|³/g, '³')
+    .replace(/\^\{?([0-9a-zA-Z]+)\}?/g, '^$1')
+    .replace(/\\approx\b/g, '≈')
+    .replace(/\\le\b|\\leq\b/g, '≤')
+    .replace(/\\ge\b|\\geq\b/g, '≥')
+    .replace(/\\ne\b|\\neq\b/g, '≠')
+    .replace(/\\pi\b/g, 'π')
+    .replace(/\\(?:text|mathrm)\{([^}]+)\}/g, '$1')
+  return s
+}
+
+/**
+ * 把题文或板书渲染成 HTML
+ * 统一走夏夏手写规范：能不用 tex 就不用，使用本字体最简符号渲染
  */
 export function renderProblemHtml(text) {
-  const raw = String(text || '').trim()
-  if (!raw) return ''
-  const promoted = promoteSimpleFractions(raw)
-  if (!LATEX_HINT.test(promoted) && !/\d+\/\d+/.test(raw)) {
-    return escapeHtml(raw).replace(/\n/g, '<br>')
-  }
-  return renderDelimited(promoted)
+  return renderXiaXiaHandwrittenHtml(text)
 }
+

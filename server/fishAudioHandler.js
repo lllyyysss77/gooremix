@@ -1,5 +1,5 @@
 import { createHash } from 'crypto'
-import { existsSync, mkdirSync, writeFileSync, readFileSync } from 'fs'
+import { existsSync, mkdirSync, writeFileSync, readFileSync, readdirSync } from 'fs'
 import { resolve, dirname } from 'path'
 import { fileURLToPath } from 'url'
 
@@ -330,6 +330,83 @@ export async function handleFishAudioRequest(req, res) {
         ok: false,
         error: error.message || String(error),
       })
+      return true
+    }
+  }
+
+  // POST /api/tts/check-cache — 检查给定文本列表是否在本地已有音频缓存
+  if (req.method === 'POST' && path === '/check-cache') {
+    try {
+      const body = await readJsonBody(req)
+      const items = Array.isArray(body.items) ? body.items : []
+      const referenceId = body.referenceId || DEFAULT_REFERENCE_ID
+      const model = body.model || DEFAULT_MODEL
+      ensureAudioCacheDir()
+
+      const results = items.map((item, index) => {
+        const text = typeof item === 'string' ? item : item.text || item.speech || ''
+        const id = item.id !== undefined ? item.id : index
+        if (!text.trim()) {
+          return { id, text, cached: false }
+        }
+        const hash = getAudioHash(text.trim(), referenceId, model)
+        const filename = `${hash}.mp3`
+        const filePath = resolve(AUDIO_CACHE_DIR, filename)
+        if (existsSync(filePath)) {
+          try {
+            const stat = readFileSync(filePath)
+            if (stat && stat.length > 500) {
+              return {
+                id,
+                text,
+                cached: true,
+                audioUrl: `/audio-cache/${filename}`,
+                size: stat.length,
+                hash,
+              }
+            }
+          } catch {
+            // ignore
+          }
+        }
+
+        // 2. 检查 public/audio/ 目录是否已有该步骤的本地音频文件
+        const stepNum = item.stepIndex !== undefined ? (Number(item.stepIndex) + 1) : (index + 1)
+        if (existsSync(AUDIO_DIR)) {
+          try {
+            const audioFiles = readdirSync(AUDIO_DIR)
+            const stepMatch = audioFiles.find((f) => f.endsWith(`-step${stepNum}.mp3`))
+            if (stepMatch) {
+              const fullPath = resolve(AUDIO_DIR, stepMatch)
+              const stat = readFileSync(fullPath)
+              if (stat && stat.length > 500) {
+                return {
+                  id,
+                  text,
+                  cached: true,
+                  audioUrl: `/audio/${stepMatch}`,
+                  size: stat.length,
+                  hash,
+                }
+              }
+            }
+          } catch {
+            // ignore
+          }
+        }
+        return { id, text, cached: false, hash }
+      })
+
+      const cachedCount = results.filter(r => r.cached).length
+      sendJson(res, 200, {
+        ok: true,
+        cachedCount,
+        totalCount: items.length,
+        items: results,
+      })
+      return true
+    } catch (error) {
+      sendJson(res, 500, { ok: false, error: error.message || String(error) })
       return true
     }
   }

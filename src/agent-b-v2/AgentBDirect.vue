@@ -6,6 +6,7 @@ import katex from 'katex'
 import 'katex/dist/katex.min.css'
 import {
   CheckCircleOutlined,
+  CheckCircleFilled,
   WarningOutlined,
   DownloadOutlined,
   SettingOutlined,
@@ -55,6 +56,7 @@ import VisualTimeline from '../components/VisualTimeline.vue'
 import { showGlobalLoading, hideGlobalLoading } from '../services/globalLoading.js'
 // 画布参数唯一真源：src/services/stepHandoff.js
 import { QUESTION_FONT_SIZE, QUESTION_LINE_HEIGHT, CANVAS_SIZE, buildCanvasParams } from '../services/stepHandoff.js'
+import { renderXiaXiaHandwrittenHtml } from '../utils/mathText.js'
 
 const props = defineProps({
   initialHandoff: { type: Object, required: true },
@@ -152,6 +154,17 @@ const refineResult = ref(null)
 const refineAppliedAt = ref('')
 const skillList = listSkills()
 const selectedSkillId = ref(DEFAULT_SKILL_ID)
+const skillOptions = computed(() => skillList.map(s => ({
+  value: s.id,
+  label: `${s.name}`,
+})))
+const activeHandoffTab = ref('layout')
+function scrollToHandoffSection(id) {
+  const el = document.getElementById(id)
+  if (el) {
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+}
 const promptEditOpen = ref(false)
 const apiConfigOpen = ref(false)
 const cleanupLoading = ref(false)
@@ -388,26 +401,7 @@ function parseBoard(board, row = null) {
 function renderBoardContent(board) {
   const { content } = parseBoard(board)
   if (!content) return ''
-  let result = String(content)
-  // 处理 $$...$$（display mode）
-  result = result.replace(/\$\$([\s\S]+?)\$\$/g, (match, expr) => {
-    try {
-      return katex.renderToString(expr.trim(), { throwOnError: false, displayMode: true, strict: 'ignore' })
-    } catch { return match }
-  })
-  // 处理 $...$（inline mode）
-  result = result.replace(/\$([^$\n]+?)\$/g, (match, expr) => {
-    try {
-      return katex.renderToString(expr.trim(), { throwOnError: false, strict: 'ignore' })
-    } catch { return match }
-  })
-  // 处理裸 LaTeX（包含 \frac \begin \sqrt 等）
-  if (/\\(frac|begin|sqrt|sum|int|lim|boxed|times|div|cdot|leq|geq|neq|approx|pm|infty|alpha|beta|gamma|delta|theta|lambda|pi|perp|parallel|angle|triangle|odot|text|mathrm|mathbf|mathcal|mathbb|operatorname|over)/.test(result)) {
-    try {
-      return katex.renderToString(result, { throwOnError: false, strict: 'ignore' })
-    } catch { return result }
-  }
-  return result
+  return renderXiaXiaHandwrittenHtml(content)
 }
 
 // 列空间合理分配与自由折叠模式（支持按需折叠每列，超大留白，杜绝劣质滑动条）
@@ -909,6 +903,264 @@ function copyAudioUrl(url) {
   }
 }
 
+// 扁平化全局动作序列（供给微缩彩排画布使用）
+const computedActionSpec = computed(() => {
+  return rows.value.flatMap((r, rIdx) => {
+    if (!Array.isArray(r.actionSpec)) return []
+    return r.actionSpec.map((act, aIdx) => ({
+      ...act,
+      order: Number.isFinite(act?.order) ? act.order : rIdx * 1000 + aIdx,
+    }))
+  })
+})
+
+// 时间轴试听触发
+function onTimelinePlayAudio({ row, index, url }) {
+  if (url) {
+    playAudioUrl(url, index)
+  } else if (row) {
+    handlePlayOrSynthesizeSpeech(index, row)
+  }
+}
+
+// 批量检索本地与已生成缓存，并自动回填实测时长与小勾勾
+async function handleBatchBackfillAudioCache(silent = false) {
+  if (!rows.value.length) {
+    if (!silent) message.warning('当前暂无执行表行内容')
+    return
+  }
+  const itemsToCheck = rows.value.map((r, i) => ({
+    id: i,
+    stepIndex: i,
+    text: (r.speech || '').trim(),
+  }))
+
+  try {
+    const res = await fetch('/api/tts/check-cache', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items: itemsToCheck }),
+    })
+    const data = await res.json()
+    if (!res.ok || !data.ok) {
+      if (!silent) message.error(data.error || '检索音频缓存失败')
+      return
+    }
+
+    let matchedCount = 0
+    for (const item of (data.items || [])) {
+      if (item.cached && item.audioUrl) {
+        const row = rows.value[item.id]
+        if (row) {
+          row.audioUrl = item.audioUrl
+          rowAudioCache.value[item.id] = item.audioUrl
+          const durMs = await readAudioDuration(item.audioUrl)
+          if (durMs) {
+            row.audioDurationMs = durMs
+          }
+          matchedCount++
+        }
+      }
+    }
+
+    if (matchedCount > 0) {
+      rows.value = applyAgentBV2Timeline(rows.value)
+      if (!silent) {
+        message.success(`🎉 音频缓存回填成功！已匹配填入 ${matchedCount} 组实测音频，时长已更新并点亮小勾勾！`)
+      }
+    } else {
+      if (!silent) {
+        message.info('未检索到已有音频缓存，您可以点击“批量合成音频”进行自动生成')
+      }
+    }
+  } catch (err) {
+    if (!silent) {
+      message.error(`音频缓存回填异常: ${err.message || String(err)}`)
+    }
+  }
+}
+
+// 批量为尚未生成音频的行合成 TTS 语音
+async function handleBatchSynthesizeSpeech() {
+  if (!rows.value.length) {
+    message.warning('当前暂无执行表行内容')
+    return
+  }
+  const pendingItems = rows.value
+    .map((r, i) => ({ id: i, text: (r.speech || '').trim(), hasAudio: Boolean(r.audioUrl || rowAudioCache.value[i]) }))
+    .filter((item) => item.text && !item.hasAudio)
+
+  if (!pendingItems.length) {
+    message.success('全部行均已拥有音频缓存，无需重复合成！')
+    return
+  }
+
+  showGlobalLoading('批量合成音频中...', `共需合成 ${pendingItems.length} 条语音，正在自动并发处理并轮换 Key...`)
+  try {
+    const res = await fetch('/api/tts/batch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        items: pendingItems.map((p) => ({ id: p.id, text: p.text })),
+        concurrency: 2,
+      }),
+    })
+    const data = await res.json()
+    if (!res.ok || !data.ok) {
+      throw new Error(data.error || '批量合成语音失败')
+    }
+
+    let successCount = 0
+    for (const item of (data.items || [])) {
+      if (item.ok && item.audioUrl) {
+        const row = rows.value[item.id]
+        if (row) {
+          row.audioUrl = item.audioUrl
+          rowAudioCache.value[item.id] = item.audioUrl
+          const durMs = await readAudioDuration(item.audioUrl)
+          if (durMs) {
+            row.audioDurationMs = durMs
+          }
+          successCount++
+        }
+      }
+    }
+
+    if (successCount > 0) {
+      rows.value = applyAgentBV2Timeline(rows.value)
+      message.success(`🎉 批量生成语音完成！共成功回填 ${successCount} 组音频缓存与小勾勾！`)
+    }
+  } catch (err) {
+    message.error(`批量合成语音失败: ${err.message || String(err)}`)
+  } finally {
+    hideGlobalLoading()
+  }
+}
+
+// 监听行文案变更，自动静默回填可能存在的音频缓存
+watch(
+  () => rows.value.map((r) => r.speech).filter(Boolean).join('|'),
+  (newVal, oldVal) => {
+    if (newVal && newVal !== oldVal) {
+      handleBatchBackfillAudioCache(true)
+    }
+  },
+  { immediate: true }
+)
+
+// ========= 题目内容与旧生成/缓存联动清空机制 =========
+const trackedProblemText = ref('')
+const isEditingProblemText = ref(false)
+const editingProblemTextValue = ref('')
+const savingProblemText = ref(false)
+
+function clearAllBGenCaches() {
+  try {
+    const keysToRemove = []
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i)
+      if (k && k.startsWith(B_CACHE_PREFIX)) keysToRemove.push(k)
+    }
+    keysToRemove.forEach((k) => localStorage.removeItem(k))
+  } catch (_) {}
+}
+
+function clearOldProblemData(silent = false) {
+  stopCurrentAudio()
+  rows.value = []
+  rowAudioCache.value = {}
+  state.value = 'idle'
+  errorText.value = ''
+  generatedModel.value = ''
+  checkState.value = 'idle'
+  checkProgressPercent.value = 0
+  checkProgressStep.value = ''
+  checkChanges.value = []
+  checkResultOpen.value = false
+  pendingCheckRows.value = null
+  checkFailedFallback.value = false
+  checkHistory.value = {
+    totalReviews: 0,
+    lastReviewType: '',
+    lastChangesCount: 0,
+    lastReviewTime: '',
+    hasApplied: false,
+  }
+  deliverableResult.value = null
+  deliverableModalOpen.value = false
+  refineResult.value = null
+  refineAppliedAt.value = ''
+  editingBoardIndex.value = -1
+  playingAudioIndex.value = null
+
+  clearAllBGenCaches()
+
+  // 触发服务端临时音视频与历史生成清理
+  fetch('/api/cleanup', { method: 'POST' }).catch(() => {})
+
+  if (!silent) {
+    message.info('题目内容已变更，旧题目的执行表、音频缓存与生成记录已自动清空')
+  }
+}
+
+// 自动监听题目内容变更：新旧不一致时自动清空
+watch(
+  () => (localHandoff.value?.problemText || '').trim(),
+  (newText, oldText) => {
+    if (!trackedProblemText.value) {
+      trackedProblemText.value = newText || ''
+      return
+    }
+    if (newText && trackedProblemText.value && newText !== trackedProblemText.value) {
+      console.log('[AgentB] 检测到题目文本变动，清空旧数据:', { old: trackedProblemText.value, new: newText })
+      trackedProblemText.value = newText
+      clearOldProblemData(false)
+    }
+  },
+  { immediate: true }
+)
+
+function toggleEditProblemText() {
+  if (isEditingProblemText.value) {
+    isEditingProblemText.value = false
+  } else {
+    editingProblemTextValue.value = localHandoff.value?.problemText || ''
+    isEditingProblemText.value = true
+  }
+}
+
+async function saveEditedProblemText() {
+  const newText = (editingProblemTextValue.value || '').trim()
+  const oldText = (localHandoff.value?.problemText || '').trim()
+  if (!newText) {
+    message.warning('题目内容不能为空')
+    return
+  }
+  if (newText === oldText) {
+    isEditingProblemText.value = false
+    return
+  }
+  savingProblemText.value = true
+  try {
+    if (localHandoff.value) {
+      localHandoff.value.problemText = newText
+    }
+    await fetch('/api/handoff', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ handoff: localHandoff.value }),
+    })
+    trackedProblemText.value = newText
+    clearOldProblemData(true)
+    isEditingProblemText.value = false
+    message.success('题目内容已更新，旧执行表与音频缓存已全部清空，请点击开始生成')
+  } catch (err) {
+    message.error(`保存题目失败：${err?.message || err}`)
+  } finally {
+    savingProblemText.value = false
+  }
+}
+
 function insertRowAfter(index) {
   invalidateCheck()
   const newRow = {
@@ -1096,7 +1348,7 @@ function bCacheKey() {
     ? String(h.knowledgeAnalysis.teachingFocus).slice(0, 80)
     : ''
   return B_CACHE_PREFIX + [
-    h.problemText?.slice(0, 80) || '',
+    (h.problemText || '').trim(),
     h.problemType || '',
     h.boardFocus || '',
     knowledgeDigest,
@@ -1692,6 +1944,35 @@ function isRefineFieldEqual(original, refined) {
         size="middle"
         style="width:100%"
       >
+        <!-- 表外上方：可爱且富有执行感的全链路流转状态进度条 -->
+        <div class="handoff-floating-stepper-container">
+          <div class="stepper-badge-left">
+            <span class="stepper-live-pulse"></span>
+            <span class="stepper-badge-text">全链路执行流转</span>
+          </div>
+          <div class="cute-stepper-track">
+            <div class="cute-step-item finish">
+              <span class="step-num">✓</span>
+              <span class="step-name">1. 题目识别</span>
+            </div>
+            <div class="step-arrow-divider">➔</div>
+            <div class="cute-step-item finish">
+              <span class="step-num">✓</span>
+              <span class="step-name">2. 画布与四区</span>
+            </div>
+            <div class="step-arrow-divider">➔</div>
+            <div :class="['cute-step-item', { finish: refineAppliedAt, active: !refineAppliedAt && !rows.length }]">
+              <span class="step-num">{{ refineAppliedAt ? '✓' : '3' }}</span>
+              <span class="step-name">3. 优化校准</span>
+            </div>
+            <div class="step-arrow-divider">➔</div>
+            <div :class="['cute-step-item', { finish: rows.length > 0, active: state === 'generating' }]">
+              <span class="step-num">{{ rows.length ? '✓' : '4' }}</span>
+              <span class="step-name">4. 生成五字段</span>
+            </div>
+          </div>
+        </div>
+
         <a-card
           class="qh-surface-card handoff-workbench-card"
           size="small"
@@ -1704,15 +1985,15 @@ function isRefineFieldEqual(original, refined) {
             </div>
           </template>
           <template #extra>
-            <a-space size="small">
+            <a-space size="small" align="center">
               <a-button
                 type="primary"
                 size="small"
-                class="btn-refine-confirm"
+                :class="['btn-refine-confirm', { 'pulse-highlight': !refineAppliedAt }]"
                 :loading="refineLoading"
                 @click="refineKnowledge"
               >
-                优化确认
+                {{ refineAppliedAt ? '重新优化校准' : '优化确认' }}
               </a-button>
               <a-button
                 size="small"
@@ -1723,8 +2004,30 @@ function isRefineFieldEqual(original, refined) {
             </a-space>
           </template>
 
+          <!-- 题文与文稿/C素材候选状态行 + 引导提示文案组件 -->
+          <div class="handoff-status-guide-row">
+            <div class="status-tags-group">
+              <div class="handoff-status-chip chip-problem">
+                <span class="chip-status-dot green"></span>
+                <span class="chip-label">题文:</span>
+                <span class="chip-val">已同步 ({{ (handoff?.problemText || '').length }}字)</span>
+              </div>
+              <div class="handoff-status-chip chip-candidate" :class="{ refined: refineAppliedAt }">
+                <span class="chip-status-dot" :class="refineAppliedAt ? 'green' : 'amber'"></span>
+                <span class="chip-label">文稿/C素材候选:</span>
+                <span class="chip-val">{{ refineAppliedAt ? '已优化校准' : '待优化校准' }}</span>
+              </div>
+            </div>
+
+            <!-- 动态引导文案组件：配置流程中动态引导用户点击优化确认按钮 -->
+            <div v-if="!refineAppliedAt" class="guide-refine-tip-badge">
+              <span class="tip-hand">👉</span>
+              <span class="tip-text">可以点击这里，对问题进行优化校准哦</span>
+              <span class="tip-arrow">➔</span>
+            </div>
+          </div>
+
           <div class="handoff-stats-chips" style="margin-bottom: 0;">
-            <span class="handoff-stat-tag">题目 1 道</span>
             <span class="handoff-stat-tag">画布分区 {{ handoff?.boardPlan ? 4 : 0 }} 个</span>
             <span class="handoff-stat-tag">知识参考 {{ relatedKnowledge.length }} 条</span>
             <span class="handoff-stat-tag">建议年级 {{ handoff?.suggestedGrade || '未判断' }}</span>
@@ -1732,331 +2035,332 @@ function isRefineFieldEqual(original, refined) {
           </div>
 
           <div v-show="handoffDetailsExpanded" class="handoff-details-collapsible" style="margin-top: 14px; border-top: 1px solid #f1f5f9; padding-top: 12px;">
-            <div class="handoff-summary-bar">
-              <span class="handoff-summary-label">交接状态</span>
-              <a-steps
-                class="qh-handoff-steps"
-                size="small"
-                :items="handoffFlowSteps"
-              />
+            <!-- 快速定位导航锚点 -->
+            <div class="handoff-quick-nav">
+              <span class="quick-nav-label">快速跳转板块:</span>
+              <button
+                type="button"
+                class="quick-nav-btn"
+                @click="scrollToHandoffSection('asset-sec-problem')"
+              >
+                📝 1. 题目基础信息区
+              </button>
+              <button
+                type="button"
+                class="quick-nav-btn"
+                @click="scrollToHandoffSection('asset-sec-knowledge')"
+              >
+                💡 2. 知识点与分析区
+              </button>
+              <button
+                type="button"
+                class="quick-nav-btn"
+                @click="scrollToHandoffSection('asset-sec-params')"
+              >
+                ⚙️ 3. 配置参数与元数据区
+              </button>
             </div>
 
-            <div class="qh-section-title">
-              题目信息
-            </div>
-          <a-descriptions
-            bordered
-            size="small"
-            :column="3"
-            class="handoff-descriptions"
-          >
-            <a-descriptions-item label="题目类型">
-              <div class="field-val-box">
-                <span class="field-val-main">{{ problemTypeLabel }}</span>
-                <span class="qh-field-key">problemType</span>
-              </div>
-            </a-descriptions-item>
-            <a-descriptions-item label="是否纯文本">
-              <div class="field-val-box">
-                <span class="field-val-main">{{ pureTextLabel }}</span>
-                <span class="qh-field-key">imageKind</span>
-              </div>
-            </a-descriptions-item>
-            <a-descriptions-item label="板书侧重">
-              <div class="field-val-box">
-                <span class="field-val-main">{{ boardFocusLabel }}</span>
-                <span class="qh-field-key">boardFocus</span>
-              </div>
-            </a-descriptions-item>
-            <a-descriptions-item label="交接时间">
-              <div class="field-val-box">
-                <span class="field-val-main">{{ confirmedAtLabel }}</span>
-                <span class="qh-field-key">confirmedAt</span>
-              </div>
-            </a-descriptions-item>
-            <a-descriptions-item label="建议年级">
-              <div class="field-val-box">
-                <span class="field-val-main">{{ handoff?.suggestedGrade || '未判断' }}</span>
-                <span class="qh-field-key">suggestedGrade</span>
-              </div>
-            </a-descriptions-item>
-            <a-descriptions-item label="建议布局">
-              <div class="field-val-box">
-                <span class="field-val-main">{{ suggestedLayoutLabel }}</span>
-                <span class="qh-field-key">suggestedLayout</span>
-              </div>
-            </a-descriptions-item>
-            <a-descriptions-item label="画布参数" :span="3">
-              <div v-if="handoff?.canvasParams" class="canvas-params-desc-box">
-                <div class="canvas-params-chips-wrap">
-                  <span class="canvas-param-chip">
-                    <span class="chip-k">尺寸</span>
-                    <span class="chip-v">{{ handoff.canvasParams.canvasSize.width }}×{{ handoff.canvasParams.canvasSize.height }}px</span>
-                  </span>
-                  <span class="canvas-param-chip">
-                    <span class="chip-k">题目字号</span>
-                    <span class="chip-v">{{ handoff.canvasParams.fontSize.question.px }}px</span>
-                  </span>
-                  <span class="canvas-param-chip">
-                    <span class="chip-k">正文字号</span>
-                    <span class="chip-v">{{ handoff.canvasParams.fontSize.analysis.px }}px</span>
-                  </span>
-                  <span class="canvas-param-chip">
-                    <span class="chip-k">行高</span>
-                    <span class="chip-v">题{{ handoff.canvasParams.lineHeight.question }} / 文{{ handoff.canvasParams.lineHeight.others }}</span>
-                  </span>
-                  <span class="canvas-param-chip">
-                    <span class="chip-k">板书速度</span>
-                    <span class="chip-v">{{ handoff.canvasParams.boardSpeed }}</span>
-                  </span>
-                  <span class="canvas-param-chip">
-                    <span class="chip-k">动作速度</span>
-                    <span class="chip-v">{{ handoff.canvasParams.actionSpeed }}</span>
-                  </span>
+            <!-- 三大板块垂直滚动容器（当页面高度过长时自动出现整洁滚动条） -->
+            <div class="handoff-assets-scroll-container">
+              <!-- 板块 1: 题目基础信息区 -->
+              <div id="asset-sec-problem" class="asset-card-block">
+                <div class="brown-section-header">
+                  <span class="brown-header-icon">📝</span>
+                  <span class="brown-header-title">1. 题目基础信息区</span>
+                  <span class="brown-header-sub">题目原文内容、题型类别、年级建议与环节配比</span>
                 </div>
-                <span class="qh-field-key">canvasParams</span>
-              </div>
-              <span v-else class="param-empty-text">未携带画布参数</span>
-            </a-descriptions-item>
-          </a-descriptions>
 
-          <div class="qh-section-title knowledge-section-heading">
-            <span>知识点</span>
-            <a-tag v-if="refineAppliedAt" color="green">
-              已应用修缮 · handoff 已同步
-            </a-tag>
-          </div>
-          <a-alert
-            v-if="refineAppliedAt"
-            type="success"
-            show-icon
-            class="refine-applied-alert"
-            :message="`本次修缮已写入当前 handoff，并已刷新页面数据（${new Date(refineAppliedAt).toLocaleTimeString()}）`"
-          />
-          <a-descriptions
-            bordered
-            size="small"
-            :column="{ xxl: 2, xl: 2, lg: 2, md: 1, sm: 1, xs: 1 }"
-            :class="['handoff-descriptions', { 'refine-applied-fields': refineAppliedAt }]"
-          >
-            <a-descriptions-item label="知识分析">
-              <div class="field-val-box">
-                <span class="field-val-main">{{ coreKnowledge.length }} 个核心知识点 · {{ keyFormulaList.length }} 条公式</span>
-                <span class="qh-field-key">knowledgeAnalysis</span>
-              </div>
-            </a-descriptions-item>
-            <a-descriptions-item label="交接来源">
-              <div class="field-val-box">
-                <span class="field-val-main">{{ handoff?.agentPageName || 'Agent A' }} · {{ handoff?.agentCapability || '未声明能力' }} · v{{ handoff?.handoffVersion || 1 }}</span>
-                <span class="qh-field-key">agentMeta</span>
-              </div>
-            </a-descriptions-item>
-            <a-descriptions-item
-              label="知识关联点"
-              :span="2"
-            >
-              <div class="field-val-box wrap-box">
-                <div class="field-val-main">
-                  <a-space wrap size="small">
-                    <a-tag v-if="relatedKnowledge.length === 0" color="default">未优化</a-tag>
-                    <a-tag
-                      v-for="(item, idx) in relatedKnowledge"
-                      :key="typeof item === 'string' ? idx : (item['编号'] || item['知识点'])"
-                      color="blue"
-                      class="knowledge-point-tag"
-                    >
-                      {{ typeof item === 'string' ? item : (item['知识点'] || '未命名知识点') }}
-                    </a-tag>
-                  </a-space>
-                </div>
-                <span class="qh-field-key">relatedKnowledge</span>
-              </div>
-            </a-descriptions-item>
-            <a-descriptions-item
-              v-if="knowledgeAnalysis?.teachingFocus"
-              label="教学重点"
-              :span="2"
-            >
-              <div class="field-val-box">
-                <span class="field-val-main font-medium">{{ knowledgeAnalysis.teachingFocus }}</span>
-                <span class="qh-field-key">teachingFocus</span>
-              </div>
-            </a-descriptions-item>
-            <a-descriptions-item
-              v-if="keyFormulaList.length"
-              label="关键公式"
-              :span="2"
-            >
-              <div class="field-val-box wrap-box">
-                <div class="field-val-main">
-                  <a-space wrap size="small">
-                    <a-tag
-                      v-for="formula in keyFormulaList"
-                      :key="formula"
-                      color="cyan"
-                      class="formula-tag"
-                    >
-                      {{ formula }}
-                    </a-tag>
-                  </a-space>
-                </div>
-                <span class="qh-field-key">keyFormulaList</span>
-              </div>
-            </a-descriptions-item>
-            <a-descriptions-item
-              v-if="uncertainItems.length"
-              label="待确认项"
-              :span="2"
-            >
-              <div class="field-val-box wrap-box">
-                <div class="field-val-main">
-                  <a-space wrap size="small">
-                    <a-tag
-                      v-for="item in uncertainItems"
-                      :key="displayValue(item)"
-                      color="orange"
-                    >
-                      {{ displayValue(item) }}
-                    </a-tag>
-                  </a-space>
-                </div>
-                <span class="qh-field-key">uncertainItems</span>
-              </div>
-            </a-descriptions-item>
-            <a-descriptions-item
-              label="使用方式"
-              :span="2"
-            >
-              <span class="handoff-usage-note">
-                Agent A 只给软建议，不是门槛或强制清单；锚定题目与四区骨架后，由 Agent B 自主取舍、改写和补充。
-              </span>
-            </a-descriptions-item>
-          </a-descriptions>
-
-          <div class="qh-section-title">
-            布局参数
-          </div>
-          <a-descriptions
-            bordered
-            size="small"
-            :column="1"
-            class="handoff-descriptions"
-          >
-            <a-descriptions-item label="四区布局">
-              <div class="field-val-box">
-                <span class="field-val-main">
-                  <a-badge :status="handoff?.boardPlan ? 'success' : 'default'" :text="handoff?.boardPlan ? '已确认（标准四区网格）' : '未确认'" />
-                </span>
-                <span class="qh-field-key">boardPlan</span>
-              </div>
-            </a-descriptions-item>
-            <a-descriptions-item label="四区参数">
-              <div class="field-val-box wrap-box">
-                <div class="field-val-main">
-                  <div class="zone-tags-grid">
-                    <div
-                      v-for="zone in zoneParameterRows"
-                      :key="zone.key"
-                      class="zone-param-chip"
-                    >
-                      <span class="zone-chip-label">{{ zone.label }}</span>
-                      <span class="zone-chip-val">{{ zone.value }}</span>
+                <!-- 题文内容精炼展示框 -->
+                <div class="problem-text-display-box">
+                  <div class="problem-text-meta-row">
+                    <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                      <span class="text-meta-badge">题文内容</span>
+                      <span class="text-meta-count">{{ (handoff?.problemText || '').length }} 字符</span>
+                      <span v-if="rows.length" class="text-meta-hint" style="font-size: 11px; color: #b45309;">
+                        (注：题目内容变动时将自动清空旧执行表与缓存)
+                      </span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                      <a-button
+                        v-if="rows.length > 0"
+                        size="small"
+                        danger
+                        type="link"
+                        style="padding: 0; height: auto; font-size: 12px;"
+                        title="清空当前生成的五字段执行表、音频缓存与生成记录"
+                        @click="() => clearOldProblemData(false)"
+                      >
+                        🗑️ 清空旧生成与缓存
+                      </a-button>
+                      <a-button
+                        size="small"
+                        type="link"
+                        style="padding: 0; height: auto; font-size: 12px; font-weight: 500;"
+                        @click="toggleEditProblemText"
+                      >
+                        {{ isEditingProblemText ? '✕ 取消编辑' : '✏️ 修改题目' }}
+                      </a-button>
                     </div>
                   </div>
-                </div>
-                <span class="qh-field-key">zoneAnchors</span>
-              </div>
-            </a-descriptions-item>
-          </a-descriptions>
 
-          <div class="qh-section-title">
-            交接元数据
-          </div>
-          <a-descriptions
-            bordered
-            size="small"
-            :column="{ xxl: 2, xl: 2, lg: 2, md: 1, sm: 1, xs: 1 }"
-            class="handoff-descriptions"
-          >
-            <a-descriptions-item label="画布截图">
-              <div class="field-val-box">
-                <span v-if="handoff?.screenshotUrl" class="meta-path-val">
-                  {{ handoff.screenshotUrl }}
-                </span>
-                <span v-else class="param-empty-text">暂无截图</span>
-                <span class="qh-field-key">screenshotUrl</span>
-              </div>
-            </a-descriptions-item>
-            <a-descriptions-item label="知识库地址">
-              <div class="field-val-box">
-                <span class="meta-path-val">
-                  {{ handoff?.knowledgeBasePath || 'doc/knowledge-a.compact.json' }}
-                </span>
-                <span class="qh-field-key">knowledgeBasePath</span>
-              </div>
-            </a-descriptions-item>
-          </a-descriptions>
-
-          <!-- 题型配比建议（SK-06 绑定CU） -->
-          <div v-if="handoff?.stageRatioSuggestion || handoff?.['环节配比占比']" class="stage-ratio-suggestion">
-            <div class="qh-section-title">
-              题型配比建议
-            </div>
-            <a-descriptions
-              bordered
-              size="small"
-              :column="{ xxl: 2, xl: 2, lg: 2, md: 1, sm: 1, xs: 1 }"
-              class="handoff-descriptions"
-            >
-              <a-descriptions-item label="题型分类">
-                <div class="field-val-box">
-                  <div class="field-val-main">
-                    <a-tag color="purple">
-                      {{ (handoff.stageRatioSuggestion || handoff['环节配比占比']).cuCode }} · {{ (handoff.stageRatioSuggestion || handoff['环节配比占比']).type }} · {{ (handoff.stageRatioSuggestion || handoff['环节配比占比']).category }}
-                    </a-tag>
-                    <a-tag v-if="(handoff.stageRatioSuggestion || handoff['环节配比占比']).confidence === 'high'" color="green">高置信</a-tag>
-                    <a-tag v-else-if="(handoff.stageRatioSuggestion || handoff['环节配比占比']).confidence === 'medium'" color="orange">中置信</a-tag>
+                  <!-- 编辑模式 -->
+                  <div v-if="isEditingProblemText" class="problem-text-edit-wrap" style="margin-top: 6px;">
+                    <a-textarea
+                      v-model:value="editingProblemTextValue"
+                      :rows="4"
+                      placeholder="请输入或粘贴新的题目文本内容..."
+                      style="font-size: 13px; line-height: 1.6; border-radius: 6px; margin-bottom: 8px;"
+                    />
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                      <span style="font-size: 11px; color: #b45309;">
+                        ⚠️ 确认修改后将自动清空旧题目的执行表、音频缓存与生成记录
+                      </span>
+                      <div style="display: flex; gap: 8px;">
+                        <a-button size="small" @click="isEditingProblemText = false">取消</a-button>
+                        <a-button
+                          size="small"
+                          type="primary"
+                          :loading="savingProblemText"
+                          @click="saveEditedProblemText"
+                        >
+                          确认修改并应用
+                        </a-button>
+                      </div>
+                    </div>
                   </div>
-                  <span class="qh-field-key">cuCode</span>
-                </div>
-              </a-descriptions-item>
-              <a-descriptions-item label="对应知识点">
-                <div class="field-val-box">
-                  <span class="field-val-main text-secondary">{{ (handoff.stageRatioSuggestion || handoff['环节配比占比']).topicExamples }}</span>
-                  <span class="qh-field-key">topicExamples</span>
-                </div>
-              </a-descriptions-item>
-              <a-descriptions-item label="配比本质">
-                <div class="field-val-box">
-                  <span class="field-val-main">{{ (handoff.stageRatioSuggestion || handoff['环节配比占比']).essence }}</span>
-                  <span class="qh-field-key">essence</span>
-                </div>
-              </a-descriptions-item>
-              <a-descriptions-item label="环节配比占比">
-                <div class="ratio-bars-wrap">
-                  <span class="ratio-pill analysis">分析 {{ (handoff.stageRatioSuggestion || handoff['环节配比占比']).suggestedRatio.analysis }}</span>
-                  <span class="ratio-pill solution">解答 {{ (handoff.stageRatioSuggestion || handoff['环节配比占比']).suggestedRatio.solution }}</span>
-                  <span class="ratio-pill summary">总结 {{ (handoff.stageRatioSuggestion || handoff['环节配比占比']).suggestedRatio.summary }}</span>
-                  <span class="ratio-pill intro">开收场 {{ (handoff.stageRatioSuggestion || handoff['环节配比占比']).suggestedRatio.introAndClosing }}</span>
-                </div>
-              </a-descriptions-item>
-            </a-descriptions>
-          </div>
 
-          <div
-            v-if="coreKnowledge.length"
-            class="knowledge-chips"
-          >
-            <a-tag
-              v-for="item in coreKnowledge"
-              :key="item.knowledgeId || item.knowledgePoint"
-              color="blue"
-              class="knowledge-chip"
-              @click="selectedKnowledge = item"
-            >
-              {{ item.knowledgePoint || '未命名知识点' }}
-            </a-tag>
-          </div>
+                  <!-- 展示模式 -->
+                  <div v-else class="problem-text-content">
+                    {{ handoff?.problemText || '暂无题目内容' }}
+                  </div>
+                </div>
+
+                <a-descriptions
+                  bordered
+                  size="small"
+                  :column="{ xxl: 3, xl: 3, lg: 3, md: 2, sm: 1, xs: 1 }"
+                  class="handoff-descriptions"
+                  style="margin-top: 10px;"
+                >
+                  <a-descriptions-item label="题目类型">
+                    <div class="field-val-box">
+                      <span class="field-val-main font-semibold">{{ problemTypeLabel }}</span>
+                      <span class="qh-field-key">problemType</span>
+                    </div>
+                  </a-descriptions-item>
+
+                  <a-descriptions-item label="建议年级">
+                    <div class="field-val-box">
+                      <span class="field-val-main font-semibold">{{ handoff?.suggestedGrade || '未判断' }}</span>
+                      <span class="qh-field-key">suggestedGrade</span>
+                    </div>
+                  </a-descriptions-item>
+
+                  <a-descriptions-item label="板书侧重">
+                    <div class="field-val-box">
+                      <span class="field-val-main font-semibold">{{ boardFocusLabel }}</span>
+                      <span class="qh-field-key">boardFocus</span>
+                    </div>
+                  </a-descriptions-item>
+
+                  <a-descriptions-item label="题图属性">
+                    <div class="field-val-box">
+                      <span class="field-val-main">{{ pureTextLabel }}</span>
+                      <span class="qh-field-key">imageKind</span>
+                    </div>
+                  </a-descriptions-item>
+
+                  <a-descriptions-item label="环节配比占比建议" :span="2">
+                    <div class="ratio-bars-wrap">
+                      <span class="ratio-pill analysis">分析 35%</span>
+                      <span class="ratio-pill solution">解答 40%</span>
+                      <span class="ratio-pill summary">总结 15%</span>
+                      <span class="ratio-pill intro">开收场 10%</span>
+                      <span v-if="handoff?.stageRatioSuggestion || handoff?.['环节配比占比']" class="ratio-cu-tag">
+                        CU: {{ (handoff.stageRatioSuggestion || handoff['环节配比占比']).cuCode }}
+                      </span>
+                    </div>
+                  </a-descriptions-item>
+                </a-descriptions>
+              </div>
+
+              <!-- 板块 2: 知识点与分析区 -->
+              <div id="asset-sec-knowledge" class="asset-card-block">
+                <div class="brown-section-header">
+                  <span class="brown-header-icon">💡</span>
+                  <span class="brown-header-title">2. 知识点与分析区</span>
+                  <span class="brown-header-sub">
+                    关联考点、核心公式、待确认项与教学重点
+                    <a-tag v-if="refineAppliedAt" color="green" style="margin-left: 8px;">已应用校准</a-tag>
+                  </span>
+                </div>
+
+                <a-alert
+                  v-if="refineAppliedAt"
+                  type="success"
+                  show-icon
+                  class="refine-applied-alert"
+                  :message="`本次修缮已写入当前 handoff，并已刷新页面数据（${new Date(refineAppliedAt).toLocaleTimeString()}）`"
+                  style="margin-bottom: 12px;"
+                />
+
+                <a-descriptions
+                  bordered
+                  size="small"
+                  :column="{ xxl: 2, xl: 2, lg: 2, md: 1, sm: 1, xs: 1 }"
+                  :class="['handoff-descriptions', { 'refine-applied-fields': refineAppliedAt }]"
+                >
+                  <a-descriptions-item label="知识关联点" :span="2">
+                    <div class="field-val-box wrap-box">
+                      <div class="field-val-main">
+                        <a-space wrap size="small">
+                          <a-tag v-if="relatedKnowledge.length === 0" color="default">未关联知识点</a-tag>
+                          <a-tag
+                            v-for="(item, idx) in relatedKnowledge"
+                            :key="typeof item === 'string' ? idx : (item['编号'] || item['知识点'])"
+                            color="blue"
+                            class="knowledge-point-tag"
+                          >
+                            {{ typeof item === 'string' ? item : (item['知识点'] || '未命名知识点') }}
+                          </a-tag>
+                        </a-space>
+                      </div>
+                      <span class="qh-field-key">relatedKnowledge</span>
+                    </div>
+                  </a-descriptions-item>
+
+                  <a-descriptions-item
+                    v-if="knowledgeAnalysis?.teachingFocus"
+                    label="教学重点"
+                    :span="2"
+                  >
+                    <div class="field-val-box">
+                      <span class="field-val-main font-medium">{{ knowledgeAnalysis.teachingFocus }}</span>
+                      <span class="qh-field-key">teachingFocus</span>
+                    </div>
+                  </a-descriptions-item>
+
+                  <a-descriptions-item
+                    v-if="keyFormulaList.length"
+                    label="关键公式"
+                    :span="2"
+                  >
+                    <div class="field-val-box wrap-box">
+                      <div class="field-val-main">
+                        <a-space wrap size="small">
+                          <a-tag
+                            v-for="formula in keyFormulaList"
+                            :key="formula"
+                            color="cyan"
+                            class="formula-tag"
+                          >
+                            {{ formula }}
+                          </a-tag>
+                        </a-space>
+                      </div>
+                      <span class="qh-field-key">keyFormulaList</span>
+                    </div>
+                  </a-descriptions-item>
+
+                  <a-descriptions-item
+                    v-if="uncertainItems.length"
+                    label="待确认项"
+                    :span="2"
+                  >
+                    <div class="field-val-box wrap-box">
+                      <div class="field-val-main">
+                        <a-space wrap size="small">
+                          <a-tag
+                            v-for="item in uncertainItems"
+                            :key="displayValue(item)"
+                            color="orange"
+                          >
+                            {{ displayValue(item) }}
+                          </a-tag>
+                        </a-space>
+                      </div>
+                      <span class="qh-field-key">uncertainItems</span>
+                    </div>
+                  </a-descriptions-item>
+
+                  <a-descriptions-item label="教学节奏建议" :span="2">
+                    <span class="handoff-usage-note">
+                      基于孩子认知起点循序渐进：重在带孩子看条件、问为什么、调用学过的知识、形成解题直觉。
+                    </span>
+                  </a-descriptions-item>
+                </a-descriptions>
+              </div>
+
+              <!-- 板块 3: 配置参数与元数据区 -->
+              <div id="asset-sec-params" class="asset-card-block">
+                <div class="brown-section-header">
+                  <span class="brown-header-icon">⚙️</span>
+                  <span class="brown-header-title">3. 配置参数与元数据区</span>
+                  <span class="brown-header-sub">标准真画布规格、四区坐标参数与交接元数据</span>
+                </div>
+
+                <a-descriptions
+                  bordered
+                  size="small"
+                  :column="{ xxl: 2, xl: 2, lg: 2, md: 1, sm: 1, xs: 1 }"
+                  class="handoff-descriptions"
+                >
+                  <a-descriptions-item label="四区布局规划" :span="2">
+                    <div class="field-val-box wrap-box">
+                      <div class="field-val-main">
+                        <div class="zone-tags-grid">
+                          <div
+                            v-for="zone in zoneParameterRows"
+                            :key="zone.key"
+                            class="zone-param-chip"
+                          >
+                            <span class="zone-chip-label">{{ zone.label }}</span>
+                            <span class="zone-chip-val">{{ zone.value }}</span>
+                          </div>
+                        </div>
+                      </div>
+                      <span class="qh-field-key">zoneAnchors</span>
+                    </div>
+                  </a-descriptions-item>
+
+                  <a-descriptions-item label="真画布标准尺寸">
+                    <div class="field-val-box">
+                      <span class="field-val-main font-mono">1726 × 980 px (16:9.1 教学黑板)</span>
+                      <span class="qh-field-key">canvasSize</span>
+                    </div>
+                  </a-descriptions-item>
+
+                  <a-descriptions-item label="字号与字体规范">
+                    <div class="field-val-box">
+                      <span class="field-val-main font-mono">题目 30px (印刷体) · 正文/板书 35px (手写体)</span>
+                      <span class="qh-field-key">fontSpec</span>
+                    </div>
+                  </a-descriptions-item>
+
+                  <a-descriptions-item label="交接来源">
+                    <div class="field-val-box">
+                      <span class="field-val-main">{{ handoff?.agentPageName || 'Agent A' }} · {{ handoff?.agentCapability || '题图识别与四区分割' }}</span>
+                      <span class="qh-field-key">agentMeta</span>
+                    </div>
+                  </a-descriptions-item>
+
+                  <a-descriptions-item label="知识库配置">
+                    <div class="field-val-box">
+                      <span class="meta-path-val">{{ handoff?.knowledgeBasePath || 'doc/knowledge-a.compact.json' }}</span>
+                      <span class="qh-field-key">knowledgeBasePath</span>
+                    </div>
+                  </a-descriptions-item>
+
+                  <a-descriptions-item v-if="handoff?.screenshotUrl" label="画布截图存档" :span="2">
+                    <div class="field-val-box">
+                      <span class="meta-path-val">{{ handoff.screenshotUrl }}</span>
+                      <span class="qh-field-key">screenshotUrl</span>
+                    </div>
+                  </a-descriptions-item>
+                </a-descriptions>
+              </div>
+            </div>
           </div>
         </a-card>
 
@@ -2066,31 +2370,6 @@ function isRefineFieldEqual(original, refined) {
           show-icon
           :message="errorText"
         />
-
-
-        <a-row :gutter="[16, 16]">
-          <a-col :span="24">
-            <a-card
-              class="qh-surface-card studio-problem-card"
-              :bordered="false"
-            >
-              <div class="problem-card-header">
-                <div class="problem-card-title-wrap">
-                  <span class="problem-card-badge">题</span>
-                  <span class="problem-card-title">已确认题目</span>
-                  <span class="problem-type-pill">{{ problemTypeLabel }}</span>
-                  <span v-if="handoff?.suggestedGrade" class="grade-pill">{{ handoff.suggestedGrade }}</span>
-                </div>
-                <div class="problem-card-extra">
-                  <span class="problem-char-stat">{{ (handoff?.problemText || '').length }} 字</span>
-                </div>
-              </div>
-              <div class="problem-text-content">
-                {{ handoff?.problemText || '暂无题目内容' }}
-              </div>
-            </a-card>
-          </a-col>
-        </a-row>
 
         <a-card class="qh-surface-card studio-workbench-card" :bordered="false">
           <template #title>
@@ -2113,6 +2392,9 @@ function isRefineFieldEqual(original, refined) {
             <div class="studio-actions-container">
               <!-- 双保险 ASR 兜底与独立校验组 -->
               <div class="action-btn-group group-asr">
+                <div v-if="rows.length" class="step-guide-tag step-guide-2">
+                  第 2 步
+                </div>
                 <a-button
                   type="primary"
                   class="btn-asr-fallback"
@@ -2138,22 +2420,13 @@ function isRefineFieldEqual(original, refined) {
                   </template>
                   Check Agent
                 </a-button>
-
-                <a-button
-                  :disabled="!rows.length"
-                  class="btn-revert"
-                  title="还原到 Check 之前的原始版本"
-                  @click="revertCheck"
-                >
-                  <template #icon>
-                    <RollbackOutlined />
-                  </template>
-                  还原
-                </a-button>
               </div>
 
               <!-- 统一教学微课演播与交付物单页 -->
               <div class="action-btn-group group-deliverable">
+                <div v-if="rows.length" class="step-guide-tag step-guide-3">
+                  第 3 步
+                </div>
                 <a-button
                   type="primary"
                   class="btn-open-handdraw-player"
@@ -2165,7 +2438,7 @@ function isRefineFieldEqual(original, refined) {
                   <template #icon>
                     <VideoCameraOutlined />
                   </template>
-                  🎬 教学微课演播 (统一单页)
+                  🎬 教学微课演播
                 </a-button>
 
                 <a-button
@@ -2178,7 +2451,7 @@ function isRefineFieldEqual(original, refined) {
                   <template #icon>
                     <FileDoneOutlined />
                   </template>
-                  {{ deliverableResult ? '固化归档单页与 JSON' : '生成交付单页' }}
+                  {{ deliverableResult ? '固化归档' : '交付单页' }}
                 </a-button>
               </div>
 
@@ -2225,8 +2498,37 @@ function isRefineFieldEqual(original, refined) {
                 </a-dropdown>
               </div>
 
-              <!-- 提示词与核心生成组 -->
+              <!-- 讲课风格下拉选择（直接点击下拉选择风格，不展开复杂原始提示词） -->
+              <div class="action-style-selector-wrap" title="选择讲课风格">
+                <span class="style-select-label">风格:</span>
+                <a-select
+                  v-model:value="selectedSkillId"
+                  :options="skillOptions"
+                  style="width: 140px;"
+                  size="middle"
+                  class="skill-dropdown-select"
+                  placeholder="选择讲课风格"
+                />
+              </div>
+
+              <!-- 核心生成组（带醒目步骤引导与脉冲高亮） -->
               <div class="action-btn-group group-generate">
+                <div v-if="!rows.length && state !== 'generating'" class="step-guide-tag step-guide-1">
+                  第 1 步
+                </div>
+                <a-button
+                  type="primary"
+                  :class="['btn-main-generate', { 'pulse-highlight': !rows.length }]"
+                  :loading="state === 'generating'"
+                  title="Shift+点击强制刷新缓存"
+                  @click="(e) => generateRows(e.shiftKey)"
+                >
+                  <template #icon>
+                    <ThunderboltOutlined />
+                  </template>
+                  {{ rows.length ? '重新生成五字段' : '🚀 生成 Agent B 五字段' }}
+                </a-button>
+
                 <a-button
                   class="btn-settings"
                   title="配置 Agent B API 密钥（支持多个密钥用英文逗号,隔开轮询）"
@@ -2236,30 +2538,6 @@ function isRefineFieldEqual(original, refined) {
                     <KeyOutlined />
                   </template>
                   API 配置
-                </a-button>
-
-                <a-button
-                  class="btn-settings"
-                  title="编辑/切换提示词"
-                  @click="promptEditOpen = true"
-                >
-                  <template #icon>
-                    <SettingOutlined />
-                  </template>
-                  提示词
-                </a-button>
-
-                <a-button
-                  type="primary"
-                  class="btn-main-generate"
-                  :loading="state === 'generating'"
-                  title="Shift+点击强制刷新缓存"
-                  @click="(e) => generateRows(e.shiftKey)"
-                >
-                  <template #icon>
-                    <ThunderboltOutlined />
-                  </template>
-                  {{ rows.length ? '重新生成五字段' : '生成 Agent B 五字段' }}
                 </a-button>
               </div>
             </div>
@@ -2364,11 +2642,22 @@ function isRefineFieldEqual(original, refined) {
           </div>
 
           <div v-else class="studio-table-container">
-            <!-- 视觉时间轴组件：映射每个 Row 组为独立区块，展示 MP3 时长与板书起手时机（由音频和系统语义自动驱动） -->
+            <!-- 视觉时间轴组件：电视彩排台 + 微缩预览画布 + 真实音频播放与小勾勾联动 -->
             <VisualTimeline
               :rows="rows"
               :active-index="editingBoardIndex"
+              :problem-text="handoff?.problemText || ''"
+              :topic-layout="handoff?.topicLayout || null"
+              :board-plan="handoff?.boardPlan || null"
+              :source-image-url="handoff?.sourceImageUrl || ''"
+              :keep-original="handoff?.keepOriginal || false"
+              :action-spec="computedActionSpec"
+              :row-audio-cache="rowAudioCache"
+              :playing-audio-index="playingAudioIndex"
               @select-row="onSelectRowFromTimeline"
+              @play-audio="onTimelinePlayAudio"
+              @batch-backfill-cache="() => handleBatchBackfillAudioCache(false)"
+              @batch-synthesize="handleBatchSynthesizeSpeech"
             />
 
             <!-- 列空间合理分配与自由折叠工具条 -->
@@ -2554,6 +2843,14 @@ function isRefineFieldEqual(original, refined) {
                       <span class="speech-stat-time">
                         {{ record.audioDurationMs ? `真实音频 ${Math.round(record.audioDurationMs / 100) / 10} 秒` : `预估 ${getRowEstimatedSeconds(record.speech).seconds} 秒` }}
                       </span>
+                      <!-- 音频缓存回填成功的小勾勾 -->
+                      <span
+                        v-if="record.audioUrl || rowAudioCache[index]"
+                        class="speech-audio-cache-tag"
+                        title="🎉 音频缓存回填成功！已匹配真实音频与实测时长"
+                      >
+                        <CheckCircleFilled style="color: #10b981;" /> 已回填
+                      </span>
                     </div>
 
                     <!-- 语音控制按钮组：小喇叭(生成/试听) · 重新生成 · 保存本地并记录下载URL -->
@@ -2562,9 +2859,10 @@ function isRefineFieldEqual(original, refined) {
                       <a-button
                         size="small"
                         class="speech-btn-horn"
+                        :class="{ 'has-cached-audio': record.audioUrl || rowAudioCache[index] }"
                         :type="playingAudioIndex === index ? 'primary' : 'default'"
                         :loading="synthesizingRowIndex === index"
-                        :title="playingAudioIndex === index ? '暂停播放' : (record.audioUrl || rowAudioCache[index] ? '播放试听' : '手动生成本内容语音')"
+                        :title="playingAudioIndex === index ? '暂停播放' : (record.audioUrl || rowAudioCache[index] ? '播放试听已回填缓存音频' : '手动生成本内容语音')"
                         @click="handlePlayOrSynthesizeSpeech(index, record)"
                       >
                         <template #icon>
@@ -2572,6 +2870,7 @@ function isRefineFieldEqual(original, refined) {
                           <SoundOutlined v-else :class="{ 'horn-has-audio': record.audioUrl || rowAudioCache[index] }" />
                         </template>
                         <span>{{ playingAudioIndex === index ? '暂停' : (record.audioUrl || rowAudioCache[index] ? '试听' : '生成语音') }}</span>
+                        <span v-if="record.audioUrl || rowAudioCache[index]" class="horn-check-dot">✓</span>
                       </a-button>
 
                       <!-- 2. 音频URL记录后切换为“播放预览”，未记录时为“重新生成” -->
@@ -3530,6 +3829,459 @@ function isRefineFieldEqual(original, refined) {
 </template>
 
 <style scoped>
+/* ================= 全链路可爱表外流转状态进度条 ================= */
+.handoff-floating-stepper-container {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: linear-gradient(135deg, #fefce8 0%, #fffbeb 50%, #fef3c7 100%);
+  border: 1.5px solid #fde68a;
+  border-radius: 12px;
+  padding: 8px 16px;
+  margin-bottom: 4px;
+  box-shadow: 0 2px 8px rgba(245, 158, 11, 0.08);
+}
+
+.stepper-badge-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #92400e;
+}
+
+.stepper-live-pulse {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #f59e0b;
+  box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.7);
+  animation: cutePulseGlow 1.8s infinite;
+}
+
+@keyframes cutePulseGlow {
+  0% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.7);
+  }
+  70% {
+    transform: scale(1.15);
+    box-shadow: 0 0 0 8px rgba(245, 158, 11, 0);
+  }
+  100% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(245, 158, 11, 0);
+  }
+}
+
+.cute-stepper-track {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.cute-step-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: #ffffff;
+  border: 1px solid #fde68a;
+  border-radius: 20px;
+  padding: 3px 10px;
+  font-size: 12px;
+  color: #78350f;
+  transition: all 0.2s ease;
+}
+
+.cute-step-item.finish {
+  background: #ecfdf5;
+  border-color: #a7f3d0;
+  color: #065f46;
+}
+
+.cute-step-item.active {
+  background: #fff7ed;
+  border-color: #fdba74;
+  color: #c2410c;
+  font-weight: 600;
+  box-shadow: 0 0 0 2px rgba(249, 115, 22, 0.15);
+}
+
+.cute-step-item .step-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #d1fae5;
+  color: #059669;
+  font-size: 10px;
+  font-weight: bold;
+}
+
+.cute-step-item.active .step-num {
+  background: #ffedd5;
+  color: #ea580c;
+}
+
+.step-arrow-divider {
+  font-size: 11px;
+  color: #d97706;
+  opacity: 0.7;
+}
+
+/* ================= 题文与文稿状态行 + 引导提示文案组件 ================= */
+.handoff-status-guide-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 8px 12px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  margin-bottom: 12px;
+}
+
+.status-tags-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.handoff-status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  color: #334155;
+}
+
+.handoff-status-chip.chip-candidate.refined {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+  color: #166534;
+}
+
+.chip-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.chip-status-dot.green {
+  background: #10b981;
+}
+
+.chip-status-dot.amber {
+  background: #f59e0b;
+  animation: cutePulseGlow 1.5s infinite;
+}
+
+.chip-label {
+  font-weight: 600;
+  color: #475569;
+}
+
+.chip-val {
+  font-family: inherit;
+}
+
+/* 动态引导文案组件（指引用户去点击优化校准） */
+.guide-refine-tip-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: linear-gradient(90deg, #fffbeb, #fef3c7);
+  border: 1px solid #f59e0b;
+  color: #b45309;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 12px;
+  border-radius: 20px;
+  box-shadow: 0 2px 6px rgba(245, 158, 11, 0.15);
+  animation: guideFloat 2.5s ease-in-out infinite;
+}
+
+.guide-refine-tip-badge .tip-hand {
+  font-size: 14px;
+  animation: tipPoint 1.2s ease-in-out infinite alternate;
+}
+
+.guide-refine-tip-badge .tip-arrow {
+  font-size: 12px;
+  color: #d97706;
+  font-weight: bold;
+}
+
+@keyframes guideFloat {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-2px);
+  }
+}
+
+@keyframes tipPoint {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(3px);
+  }
+}
+
+/* 优化确认按钮与主生成按钮的高亮脉冲动画 */
+.pulse-highlight {
+  position: relative;
+  box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.7) !important;
+  animation: refinePulse 2s infinite !important;
+  border-color: #f59e0b !important;
+}
+
+@keyframes refinePulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.7);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(245, 158, 11, 0);
+    transform: scale(1.02);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(245, 158, 11, 0);
+    transform: scale(1);
+  }
+}
+
+/* ================= 快速跳转导航与三大卡片垂直滚动容器 ================= */
+.handoff-quick-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 6px 12px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+.quick-nav-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+  margin-right: 4px;
+}
+
+.quick-nav-btn {
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #78350f;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.quick-nav-btn:hover {
+  background: #fef3c7;
+  border-color: #fde68a;
+  color: #92400e;
+  transform: translateY(-1px);
+}
+
+/* 限制最大高度并自带垂直滚动条，保持页面整洁，绝不无限向下推高页面 */
+.handoff-assets-scroll-container {
+  max-height: 480px;
+  overflow-y: auto;
+  scroll-behavior: smooth;
+  padding-right: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* 精致轻盈的垂直滚动条 */
+.handoff-assets-scroll-container::-webkit-scrollbar {
+  width: 6px;
+}
+
+.handoff-assets-scroll-container::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 4px;
+}
+
+.handoff-assets-scroll-container::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+  transition: background 0.2s ease;
+}
+
+.handoff-assets-scroll-container::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* 三个大卡片板块通用样式 */
+.asset-card-block {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 14px 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+  transition: border-color 0.2s ease;
+}
+
+.asset-card-block:hover {
+  border-color: #cbd5e1;
+}
+
+/* 题文展示框 */
+.problem-text-display-box {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+}
+
+.problem-text-meta-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.text-meta-badge {
+  font-size: 11px;
+  font-weight: 700;
+  background: #e2e8f0;
+  color: #334155;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.text-meta-count {
+  font-size: 11px;
+  color: #64748b;
+}
+
+.problem-text-content {
+  font-size: 13px;
+  line-height: 1.6;
+  color: #1e293b;
+  max-height: 120px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  padding-right: 4px;
+}
+
+.problem-text-content::-webkit-scrollbar {
+  width: 4px;
+}
+
+.problem-text-content::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 2px;
+}
+
+/* 棕色稍微大一点的字号，层次结构分明 */
+.brown-section-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 10px;
+  margin-bottom: 12px;
+  border-bottom: 2px solid #fef3c7;
+}
+
+.brown-header-icon {
+  font-size: 18px;
+}
+
+.brown-header-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #78350f; /* 沉稳典雅的棕色 */
+  letter-spacing: 0.3px;
+}
+
+.brown-header-sub {
+  font-size: 12px;
+  color: #92400e;
+  margin-left: 4px;
+  opacity: 0.85;
+}
+
+/* 按钮组步骤标签与风格下拉框 */
+.action-style-selector-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 2px 8px;
+}
+
+.style-select-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #475569;
+  white-space: nowrap;
+}
+
+.step-guide-tag {
+  position: absolute;
+  top: -9px;
+  left: 6px;
+  z-index: 2;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 10px;
+  line-height: 1.3;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.step-guide-1 {
+  background: #f59e0b;
+  color: #ffffff;
+  box-shadow: 0 1px 4px rgba(245, 158, 11, 0.4);
+}
+
+.step-guide-2 {
+  background: #0284c7;
+  color: #ffffff;
+  box-shadow: 0 1px 4px rgba(2, 132, 199, 0.4);
+}
+
+.step-guide-3 {
+  background: #16a34a;
+  color: #ffffff;
+  box-shadow: 0 1px 4px rgba(22, 163, 74, 0.4);
+}
+
+.action-btn-group {
+  position: relative;
+}
+
 /* 下游 Agent 规范抽屉样式 */
 .api-spec-drawer-content {
   display: flex;
@@ -4614,6 +5366,21 @@ function isRefineFieldEqual(original, refined) {
   display: flex;
   align-items: center;
   gap: 4px;
+  flex-wrap: wrap;
+}
+
+.speech-audio-cache-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: #ecfdf5;
+  border: 1px solid #10b981;
+  color: #047857;
+  font-weight: 700;
+  font-size: 10.5px;
+  padding: 0 6px;
+  border-radius: 9999px;
+  margin-left: 4px;
 }
 
 .speech-audio-actions {
@@ -4650,6 +5417,26 @@ function isRefineFieldEqual(original, refined) {
 
 .horn-has-audio {
   color: #059669;
+}
+
+.speech-btn-horn.has-cached-audio {
+  border-color: #a7f3d0 !important;
+  background: #ecfdf5 !important;
+  color: #047857 !important;
+}
+
+.speech-btn-horn.has-cached-audio:hover {
+  background: #d1fae5 !important;
+  border-color: #10b981 !important;
+  color: #065f46 !important;
+}
+
+.horn-check-dot {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 900;
+  color: #10b981;
+  margin-left: 2px;
 }
 
 .speech-btn-preview {

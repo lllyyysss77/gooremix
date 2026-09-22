@@ -140,8 +140,11 @@ function requireSvgElement(element, message) {
 }
 
 function resolveDrawingOverlay(canvas) {
-  if (typeof HTMLElement === 'undefined' || !(canvas instanceof HTMLElement)) {
-    throw new Error('rough.js 需要已渲染的真画布 HTMLElement')
+  if (!canvas || (typeof globalThis.Element === 'undefined' || !(canvas instanceof globalThis.Element))) {
+    throw new Error('rough.js 需要已渲染的真画布元素')
+  }
+  if (canvas.matches?.('[data-board-overlay="rough-drawings"]') || (canvas.tagName?.toLowerCase() === 'svg' && canvas.classList?.contains('rough-drawing-layer'))) {
+    return requireSvgElement(canvas, 'rough.js L3 绘图层无效')
   }
   let overlay = canvas.querySelector('[data-board-overlay="rough-drawings"]')
   if (!overlay) {
