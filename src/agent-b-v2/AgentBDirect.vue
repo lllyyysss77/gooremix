@@ -1803,10 +1803,35 @@ function openLitePlayer() {
 function openHanddrawPlayer() {
   const payload = serializeCurrentDeliverableState()
   window._LATEST_AGENT_B_RESULT = payload
+  const projectCode = deliverableResult.value?.projectCode || payload.projectCode || payload.meta?.projectCode || ''
   try {
     localStorage.setItem('agent-b-deliverable', JSON.stringify(payload))
   } catch {}
-  window.open('/deliverable/row-player.html', '_blank')
+  try {
+    saveLiveBoardPreview({
+      problemText: payload.problemText,
+      topicLayout: payload.topicLayout,
+      boardPlan: payload.boardPlan,
+      sourceImageUrl: payload.sourceImageUrl,
+      keepOriginal: payload.keepOriginal,
+      rows: payload.rows,
+      projectCode,
+    })
+  } catch {}
+  // 后台静默同步 /api/deliverable 保证实体文件与 current 指针立即可用
+  try {
+    fetch('/api/deliverable', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ deliverable: payload }),
+    }).catch(() => {})
+  } catch {}
+
+  const params = new URLSearchParams()
+  if (projectCode) params.set('id', projectCode)
+  params.set('autoPlay', '1')
+  const queryStr = params.toString()
+  window.open(`/deliverable/row-player.html${queryStr ? '?' + queryStr : ''}`, '_blank')
 }
 
 function downloadDeliverableJson() {

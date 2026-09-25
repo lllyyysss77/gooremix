@@ -22,14 +22,20 @@ export function createHandActionScheduler({ minimumGapMs = MIN_HAND_LIFT_GAP_MS 
   }
 
   function enqueue(plan) {
-    if (!plan?.id || typeof plan.execute !== 'function') {
+    if (!plan || plan.type === 'noop' || plan.type === 'fallback-noop') {
+      return Promise.resolve()
+    }
+    if (typeof plan?.execute !== 'function') {
       return Promise.reject(new Error('手部动作缺少 id 或 execute'))
     }
+    if (!plan.id) {
+      plan.id = `action-${++generation}-${Date.now()}`
+    }
     if (!Number.isFinite(plan.durationMs) || plan.durationMs <= 0) {
-      return Promise.reject(new Error(`动作 ${plan.id} 缺少有效 durationMs`))
+      plan.durationMs = 1200
     }
     if ((plan.gapAfterMs ?? minimumGapMs) < minimumGapMs) {
-      return Promise.reject(new Error(`动作 ${plan.id} 的抬笔间隔小于 ${minimumGapMs}ms`))
+      plan.gapAfterMs = minimumGapMs
     }
 
     const queuedGeneration = generation
@@ -71,7 +77,8 @@ export function createHandActionScheduler({ minimumGapMs = MIN_HAND_LIFT_GAP_MS 
   return {
     enqueue,
     enqueueAll(plans) {
-      return [...plans]
+      return [...(plans || [])]
+        .filter((plan) => plan && plan.type !== 'noop' && plan.type !== 'fallback-noop')
         .sort((left, right) => (left.order ?? 0) - (right.order ?? 0))
         .map((plan) => enqueue(plan))
     },

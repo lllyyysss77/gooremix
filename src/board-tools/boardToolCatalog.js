@@ -66,10 +66,35 @@ export function createBoardToolRuntime({
   const scheduler = createHandActionScheduler()
   const preparedPlans = new Set()
 
-  function prepare(action) {
-    if (!action || typeof action !== 'object') {
-      return { type: 'noop', execute: () => {}, remove: () => {} }
+  function prepare(rawAction) {
+    if (!rawAction || typeof rawAction !== 'object') {
+      return {
+        id: `noop:${Date.now()}:${Math.random().toString(36).slice(2, 6)}`,
+        type: 'noop',
+        durationMs: 0,
+        execute: () => {},
+        remove: () => {},
+      }
     }
+    // 如果已经是一个可执行的 plan
+    if (rawAction.id && typeof rawAction.execute === 'function') {
+      preparedPlans.add(rawAction)
+      return rawAction
+    }
+    const action = rawAction.action && typeof rawAction.action === 'object'
+      ? { ...rawAction.action, order: rawAction.order ?? rawAction.action.order }
+      : rawAction
+
+    if (action.capabilityGap) {
+      return {
+        id: `capability-gap:${Date.now()}:${Math.random().toString(36).slice(2, 6)}`,
+        type: 'noop',
+        durationMs: 0,
+        execute: () => {},
+        remove: () => {},
+      }
+    }
+
     try {
       if (action?.tool === ROUGH_NOTATION_TOOL_ID) {
         const plan = prepareRoughNotationAction(action, targetResolver)
@@ -92,23 +117,37 @@ export function createBoardToolRuntime({
     } catch (err) {
       console.warn('[boardToolCatalog] prepare 动作失败降级:', action?.tool, err?.message)
       return {
+        id: `fallback-noop:${action?.tool || 'unknown'}:${Date.now()}:${Math.random().toString(36).slice(2, 6)}`,
         type: 'fallback-noop',
         action,
+        durationMs: 0,
         execute: () => {},
         remove: () => {},
       }
     }
     console.warn(`[boardToolCatalog] 未知板书动作工具: ${action?.tool || '空'}`)
-    return { type: 'noop', execute: () => {}, remove: () => {} }
+    return {
+      id: `noop:${action?.tool || 'empty'}:${Date.now()}:${Math.random().toString(36).slice(2, 6)}`,
+      type: 'noop',
+      durationMs: 0,
+      execute: () => {},
+      remove: () => {},
+    }
   }
 
   return {
     enqueue(action) {
       const plan = prepare(action)
+      if (!plan || plan.type === 'noop' || plan.type === 'fallback-noop') {
+        return Promise.resolve()
+      }
       return scheduler.enqueue(plan)
     },
     enqueueAll(actions) {
-      const plans = (actions || []).map(prepare)
+      const plans = (actions || [])
+        .map(prepare)
+        .filter((plan) => plan && plan.type !== 'noop' && plan.type !== 'fallback-noop')
+      if (!plans.length) return []
       return scheduler.enqueueAll(plans)
     },
     clear() {

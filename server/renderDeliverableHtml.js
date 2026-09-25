@@ -28,6 +28,7 @@ export function renderDeliverableHtml(deliverable) {
   }
 
   // 极简降级兜底：自动重定向到统一播放器
+  const code = deliverable?.projectCode ? `?id=${encodeURIComponent(deliverable.projectCode)}` : ''
   return `<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -36,7 +37,7 @@ export function renderDeliverableHtml(deliverable) {
   <title>青花布手绘板书微课演播</title>
 </head>
 <body>
-  <script>window.location.href = '/deliverable/row-player.html';</script>
+  <script>window.location.href = '/deliverable/row-player.html${code}';</script>
 </body>
 </html>`
 }

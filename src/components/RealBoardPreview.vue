@@ -389,7 +389,14 @@ async function playStep(stepIndex) {
 
   // 2. 如果该行包含动作规范（圈画打勾、下划线、箭头等）：立即在锚点上执行
   if (rowActions.length > 0 && runtime) {
-    runtime.enqueueAll(rowActions)
+    try {
+      const tasks = runtime.enqueueAll(rowActions)
+      if (Array.isArray(tasks)) {
+        tasks.forEach((t) => t?.catch?.(() => {}))
+      }
+    } catch (e) {
+      console.warn('执行板书动作失败:', e)
+    }
     // 留出动作书写视觉驻留时长
     await new Promise((resolve) => {
       playTimer = setTimeout(resolve, Math.max(500, 1200 / playbackSpeed.value))
@@ -438,7 +445,14 @@ function triggerCurrentStepActions() {
     ? row.actionSpec.map(normalizeActionSpecItem).filter(Boolean)
     : []
   if (rowActions.length > 0 && runtime) {
-    runtime.enqueueAll(rowActions)
+    try {
+      const tasks = runtime.enqueueAll(rowActions)
+      if (Array.isArray(tasks)) {
+        tasks.forEach((t) => t?.catch?.(() => {}))
+      }
+    } catch (e) {
+      console.warn('执行当前步骤动作失败:', e)
+    }
   }
 }
 
@@ -504,7 +518,14 @@ function playActionSpec() {
       .map(normalizeActionSpecItem)
       .filter(Boolean)
     if (normalized.length) {
-      runtime.enqueueAll(normalized)
+      try {
+        const tasks = runtime.enqueueAll(normalized)
+        if (Array.isArray(tasks)) {
+          tasks.forEach((t) => t?.catch?.(() => {}))
+        }
+      } catch (e) {
+        console.warn('执行动作规范失败:', e)
+      }
     }
   }
 }

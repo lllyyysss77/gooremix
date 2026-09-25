@@ -883,9 +883,84 @@
      * 4. 交付物数据载入与时钟构建
      * ========================================================================= */
     async function initDeliverableData() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const queryId = urlParams.get('id') || urlParams.get('code') || urlParams.get('projectCode');
+      const queryFile = urlParams.get('file') || urlParams.get('filename');
+      const queryUrl = urlParams.get('url') || urlParams.get('apiUrl') || urlParams.get('src');
+      const queryData = urlParams.get('data');
+      const autoPlay = urlParams.get('autoPlay') === '1' || urlParams.get('autoPlay') === 'true' || urlParams.get('autoplay') === '1';
+      const initialStep = urlParams.get('step') != null ? parseInt(urlParams.get('step'), 10) : null;
+      const speed = parseFloat(urlParams.get('speed') || '');
+
       let data = window.__INITIAL_DELIVERABLE__;
 
-      // 1. 如果没有注入，尝试从 localStorage 获取最新的 Agent B 交付物
+      // 1. 如果 URL 直接传了 data 实体（JSON 字符串或 base64）
+      if (!data && queryData) {
+        try {
+          data = JSON.parse(decodeURIComponent(queryData));
+        } catch (e1) {
+          try {
+            data = JSON.parse(atob(queryData));
+          } catch (e2) {}
+        }
+      }
+
+      // 2. 如果 URL 指定了具体 id / code，按 queryId 请求后端 API 或静态交付文件
+      if (!data && queryId) {
+        try {
+          const resp = await fetch(`/api/deliverable?id=${encodeURIComponent(queryId)}`);
+          if (resp.ok) {
+            const json = await resp.json();
+            if (json && (json.deliverable || json.rows)) {
+              data = json.deliverable || json;
+            }
+          }
+        } catch (e) {}
+
+        if (!data) {
+          try {
+            const filename = queryId.endsWith('.json') ? queryId : `deliverable-${queryId}.json`;
+            const resp = await fetch(`/deliverable/${encodeURIComponent(filename)}`);
+            if (resp.ok) data = await resp.json();
+          } catch (e) {}
+        }
+      }
+
+      // 3. 如果 URL 指定了具体 file / filename
+      if (!data && queryFile) {
+        try {
+          const resp = await fetch(`/api/deliverable?file=${encodeURIComponent(queryFile)}`);
+          if (resp.ok) {
+            const json = await resp.json();
+            if (json && (json.deliverable || json.rows)) data = json.deliverable || json;
+          }
+        } catch (e) {}
+        if (!data) {
+          try {
+            const resp = await fetch(`/deliverable/${encodeURIComponent(queryFile)}`);
+            if (resp.ok) data = await resp.json();
+          } catch (e) {}
+        }
+      }
+
+      // 4. 如果 URL 指定了完整的自定义 JSON URL
+      if (!data && queryUrl) {
+        try {
+          const resp = await fetch(queryUrl);
+          if (resp.ok) data = await resp.json();
+        } catch (e) {}
+      }
+
+      // 5. 跨标签/弹窗支持：优先尝试读取 opener 的最新内存状态
+      if (!data && window.opener) {
+        try {
+          if (window.opener._LATEST_AGENT_B_RESULT) {
+            data = window.opener._LATEST_AGENT_B_RESULT;
+          }
+        } catch (e) {}
+      }
+
+      // 6. 尝试从 localStorage 获取最新的 Agent B 交付物
       if (!data) {
         try {
           const cached = localStorage.getItem('agent-b-deliverable');
@@ -893,7 +968,31 @@
         } catch (e) {}
       }
 
-      // 2. 如果还没有，尝试 fetch /deliverable/current.json
+      // 7. 尝试从 localStorage 的实时画板状态获取
+      if (!data) {
+        try {
+          const live = localStorage.getItem('qinghuabu.live-board-preview');
+          if (live) {
+            const parsedLive = JSON.parse(live);
+            if (parsedLive && parsedLive.rows) data = parsedLive;
+          }
+        } catch (e) {}
+      }
+
+      // 8. 尝试从当前服务端活跃指针拉取 /api/deliverable
+      if (!data) {
+        try {
+          const resp = await fetch('/api/deliverable');
+          if (resp.ok) {
+            const json = await resp.json();
+            if (json && (json.deliverable || json.rows)) {
+              data = json.deliverable || json;
+            }
+          }
+        } catch (e) {}
+      }
+
+      // 9. 尝试 fetch /deliverable/current.json
       if (!data) {
         try {
           const resp = await fetch('/deliverable/current.json');
@@ -901,17 +1000,64 @@
         } catch (e) {}
       }
 
+      // 10. 尝试 fetch /board-result/current.json
+      if (!data) {
+        try {
+          const resp = await fetch('/board-result/current.json');
+          if (resp.ok) data = await resp.json();
+        } catch (e) {}
+      }
+
       if (data) {
+        // 参数覆盖支持（如 URL 显式传入 problemText、sourceImage 等）
+        if (urlParams.get('problemText')) {
+          data.problemText = urlParams.get('problemText');
+        }
+        if (urlParams.get('sourceImage') || urlParams.get('screenshotUrl')) {
+          data.sourceImageUrl = urlParams.get('sourceImage') || urlParams.get('screenshotUrl');
+        }
+
         loadDeliverable(data);
+
+        // 如果传入了指定的步数序号
+        if (Number.isFinite(initialStep) && initialStep >= 0) {
+          const rows = (state.deliverable && state.deliverable.rows) || [];
+          if (rows[initialStep]) {
+            seekToMs(rows[initialStep]._startMs);
+          }
+        }
+
+        // 如果传入了播放速度
+        if (Number.isFinite(speed) && speed > 0) {
+          el.audio.playbackRate = speed;
+        }
+
+        // 如果传入了 autoPlay=1
+        if (autoPlay) {
+          setTimeout(() => {
+            play();
+          }, 350);
+        }
       } else {
         el.speechSubtitle.innerText = '请点击右上角「载入交付物」选择 deliverable.json 开始演播';
       }
+
+      // 通知父窗口或 opener 已就绪
+      try {
+        window.opener?.postMessage({ type: 'ROW_PLAYER_READY' }, '*');
+        window.parent?.postMessage({ type: 'ROW_PLAYER_READY' }, '*');
+      } catch (e) {}
     }
 
     function loadDeliverable(raw) {
+      if (!raw) return;
       // 兼容不同层级嵌套包装
       const root = raw.deliverable && raw.deliverable.rows ? raw.deliverable : (raw.deliverable || raw);
       state.deliverable = root;
+
+      // 动态更新页面标题
+      const titleName = root.projectCode || (root.problemText ? root.problemText.slice(0, 16) : '微课演播');
+      document.title = `青花布微课演播 · ${titleName}`;
 
       // 计算时序主轴总时长
       let totalMs = 0;
@@ -929,11 +1075,66 @@
       const problem = root.problemText || (root.topicLayout && root.topicLayout.question && root.topicLayout.question.text) || '';
       el.regionTopic.innerHTML = formatBoardText(problem);
 
+      // 如果有 boardPlan，动态适配四大区域锚点
+      if (root.boardPlan) {
+        if (root.boardPlan.question) {
+          el.regionTopic.style.left = `${root.boardPlan.question.x}%`;
+          el.regionTopic.style.top = `${root.boardPlan.question.y}%`;
+          el.regionTopic.style.width = `${root.boardPlan.question.w}%`;
+        }
+        if (root.boardPlan.analysis) {
+          el.regionAnalysis.style.left = `${root.boardPlan.analysis.x}%`;
+          el.regionAnalysis.style.top = `${root.boardPlan.analysis.y}%`;
+          el.regionAnalysis.style.width = `${root.boardPlan.analysis.w}%`;
+        }
+        if (root.boardPlan.solution) {
+          el.regionSolution.style.left = `${root.boardPlan.solution.x}%`;
+          el.regionSolution.style.top = `${root.boardPlan.solution.y}%`;
+          el.regionSolution.style.width = `${root.boardPlan.solution.w}%`;
+        }
+        if (root.boardPlan.summary) {
+          el.regionSummary.style.left = `${root.boardPlan.summary.x}%`;
+          el.regionSummary.style.top = `${root.boardPlan.summary.y}%`;
+          el.regionSummary.style.width = `${root.boardPlan.summary.w}%`;
+        }
+      }
+
       // 初始渲染第 0 毫秒
       seekToMs(0);
       resizeBoard();
       el.speechSubtitle.innerText = `已载入微课《${root.projectCode || '教学讲解'}》共 ${rows.length} 步`;
     }
+
+    // 监听来自父窗口/Opener 的 postMessage 控制与数据注入
+    window.addEventListener('message', (event) => {
+      const msg = event.data;
+      if (!msg || typeof msg !== 'object') return;
+      if (msg.type === 'SET_DELIVERABLE' || msg.type === 'LOAD_DELIVERABLE') {
+        const payload = msg.payload || msg.deliverable || msg.data;
+        if (payload) {
+          loadDeliverable(payload);
+          if (msg.autoPlay) play();
+        }
+      } else if (msg.type === 'PLAY') {
+        play();
+      } else if (msg.type === 'PAUSE') {
+        pause();
+      } else if (msg.type === 'SEEK_MS' && typeof msg.timeMs === 'number') {
+        seekToMs(msg.timeMs);
+      } else if (msg.type === 'SET_STEP' && typeof msg.step === 'number') {
+        const rows = (state.deliverable && state.deliverable.rows) || [];
+        if (rows[msg.step]) seekToMs(rows[msg.step]._startMs);
+      }
+    });
+
+    // 监听本地存储变更同步
+    window.addEventListener('storage', (e) => {
+      if (e.key === 'agent-b-deliverable' && e.newValue) {
+        try {
+          loadDeliverable(JSON.parse(e.newValue));
+        } catch (err) {}
+      }
+    });
 
     /* =========================================================================
      * 5. 音频作为主时钟 (Audio-Master Clock)
