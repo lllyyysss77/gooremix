@@ -2927,3 +2927,122 @@ button {
   border-color: #ff7875;
 }
 
+/* PlaybackWorkspace 时序偏差与时序溢出指示器 */
+.playback-timing-indicator-card {
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  transition: all 0.25s ease-in-out;
+  overflow: hidden;
+}
+
+.playback-timing-indicator-card.is-overflow {
+  border-color: #ff4d4f;
+  background: linear-gradient(135deg, rgba(255, 242, 240, 0.95) 0%, rgba(255, 255, 255, 0.98) 100%);
+  box-shadow: 0 4px 16px rgba(255, 77, 79, 0.18), 0 0 0 1px rgba(255, 77, 79, 0.4);
+  animation: pulseOverflowBorder 2.5s infinite ease-in-out;
+}
+
+@keyframes pulseOverflowBorder {
+  0%, 100% {
+    box-shadow: 0 4px 16px rgba(255, 77, 79, 0.18), 0 0 0 1px rgba(255, 77, 79, 0.4);
+  }
+  50% {
+    box-shadow: 0 4px 22px rgba(255, 77, 79, 0.35), 0 0 0 2px rgba(255, 77, 79, 0.7);
+  }
+}
+
+.playback-timing-indicator-card.is-aligned {
+  border-color: #b7eb8f;
+  background: linear-gradient(135deg, rgba(246, 255, 237, 0.9) 0%, rgba(255, 255, 255, 0.98) 100%);
+}
+
+.playback-timing-indicator-card.is-shorter {
+  border-color: #91caff;
+  background: linear-gradient(135deg, rgba(230, 244, 255, 0.9) 0%, rgba(255, 255, 255, 0.98) 100%);
+}
+
+.timing-bar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 8px 14px;
+}
+
+.timing-metrics-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.timing-badge-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+}
+
+.timing-overflow-alert-box {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 14px;
+  background: linear-gradient(90deg, #ff4d4f 0%, #ff7875 100%);
+  color: #fff;
+  border-top: 1px solid rgba(255, 255, 255, 0.25);
+  font-size: 13px;
+}
+
+.timing-overflow-alert-box .overflow-tag-badge {
+  background: #fff;
+  color: #cf1322;
+  font-weight: 700;
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.timing-overflow-alert-box .overflow-message-content {
+  flex: 1;
+  line-height: 1.5;
+}
+
+.timing-progress-strip {
+  height: 6px;
+  width: 100%;
+  background: #e2e8f0;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+}
+
+.timing-progress-fill-audio {
+  height: 100%;
+  background: #1890ff;
+  transition: width 0.3s ease;
+}
+
+.timing-progress-fill-board {
+  height: 100%;
+  background: #52c41a;
+  transition: width 0.3s ease;
+}
+
+.timing-progress-fill-overflow {
+  height: 100%;
+  background: repeating-linear-gradient(
+    45deg,
+    #ff4d4f,
+    #ff4d4f 6px,
+    #ff7875 6px,
+    #ff7875 12px
+  );
+  transition: width 0.3s ease;
+}
+

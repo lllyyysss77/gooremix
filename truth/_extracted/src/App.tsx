@@ -1,4 +1,17 @@
-import { CheckCircleFilled, ClockCircleFilled, DownloadOutlined, MessageOutlined, SettingOutlined, VideoCameraOutlined } from '@ant-design/icons';
+import {
+  AlertOutlined,
+  CheckCircleFilled,
+  CheckCircleOutlined,
+  ClockCircleFilled,
+  DownloadOutlined,
+  ExclamationCircleFilled,
+  FieldTimeOutlined,
+  MessageOutlined,
+  SettingOutlined,
+  SoundOutlined,
+  VideoCameraOutlined,
+  WarningFilled,
+} from '@ant-design/icons';
 import { Button, ConfigProvider, Layout, Modal, Space, Spin, Tag, Tooltip, Typography, message } from 'antd';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppSettingsDrawer } from './components/AppSettingsDrawer';
@@ -410,6 +423,7 @@ function PlaybackWorkspace({
   const canvas = useTeachingEditorStore((state) => state.project.stage.canvas);
   const clips = useTeachingEditorStore((state) => state.project.timeline.clips);
   const tracks = useTeachingEditorStore((state) => state.project.timeline.tracks);
+  const assets = useTeachingEditorStore((state) => state.project.assets);
   const selectedClipId = useTeachingEditorStore((state) => state.selectedClipId);
   const playheadMs = useTeachingEditorStore((state) => state.project.timeline.playheadMs);
   const livePlayheadMs = useTeachingEditorStore((state) => state.livePlayheadMs);
@@ -430,6 +444,51 @@ function PlaybackWorkspace({
   );
   const visiblePlayheadMs = livePlayheadMs ?? playheadMs;
 
+  // 1. voiceAudio 资产与 A 轨 Clips 时长获取
+  const voiceAudioAsset = useMemo(() => assets.find((asset) => asset.kind === 'voiceAudio'), [assets]);
+  const voiceAudioClips = useMemo(
+    () => clips.filter((clip) => clip.kind === 'audio' || clip.trackId === 'track-voice'),
+    [clips],
+  );
+  const voiceClipsDurationMs = useMemo(
+    () => voiceAudioClips.reduce((sum, clip) => sum + Math.max(0, clip.endMs - clip.startMs), 0),
+    [voiceAudioClips],
+  );
+  const voiceMaxEndMs = useMemo(
+    () => (voiceAudioClips.length > 0 ? Math.max(...voiceAudioClips.map((clip) => clip.endMs)) : 0),
+    [voiceAudioClips],
+  );
+  const parsedSummaryDurationMs = useMemo(() => {
+    if (!voiceAudioAsset?.summary) return 0;
+    const match = voiceAudioAsset.summary.match(/(?:总时长约|时长\s*)(\d+(?:\.\d+)?)\s*秒/);
+    return match ? Math.round(parseFloat(match[1]) * 1000) : 0;
+  }, [voiceAudioAsset?.summary]);
+  const totalVoiceDurationMs = voiceClipsDurationMs > 0 ? voiceClipsDurationMs : parsedSummaryDurationMs;
+
+  // 2. 所有 board 类型 clip 的总时长与最晚落点
+  const totalBoardDurationMs = useMemo(
+    () => boardClips.reduce((sum, clip) => sum + Math.max(0, clip.endMs - clip.startMs), 0),
+    [boardClips],
+  );
+  const boardMaxEndMs = useMemo(
+    () => (boardClips.length > 0 ? Math.max(...boardClips.map((clip) => clip.endMs)) : 0),
+    [boardClips],
+  );
+
+  // 3. 时长偏差与时序溢出判定
+  const deviationMs = totalVoiceDurationMs > 0 ? totalBoardDurationMs - totalVoiceDurationMs : null;
+  const isOverflow =
+    totalVoiceDurationMs > 0 &&
+    (totalBoardDurationMs > totalVoiceDurationMs || (voiceMaxEndMs > 0 && boardMaxEndMs > voiceMaxEndMs));
+  const overflowDurationMs = useMemo(() => {
+    if (!isOverflow || totalVoiceDurationMs <= 0) return 0;
+    return Math.max(
+      totalBoardDurationMs - totalVoiceDurationMs,
+      voiceMaxEndMs > 0 ? boardMaxEndMs - voiceMaxEndMs : 0,
+      0,
+    );
+  }, [isOverflow, totalVoiceDurationMs, totalBoardDurationMs, voiceMaxEndMs, boardMaxEndMs]);
+
   return (
     <>
       <StagePreview
@@ -441,6 +500,18 @@ function PlaybackWorkspace({
         onRecordingActiveChange={onRecordingActiveChange}
         onSelectBoardClip={selectClip}
         onUpdateBoardClip={updateBoardClip}
+      />
+      <PlaybackTimingDeviationIndicator
+        voiceDurationMs={totalVoiceDurationMs}
+        boardDurationMs={totalBoardDurationMs}
+        deviationMs={deviationMs}
+        isOverflow={isOverflow}
+        overflowDurationMs={overflowDurationMs}
+        voiceClipCount={voiceAudioClips.length}
+        boardClipCount={boardClips.length}
+        boardMaxEndMs={boardMaxEndMs}
+        voiceMaxEndMs={voiceMaxEndMs}
+        isVoiceReady={voiceAudioAsset?.status === 'ready'}
       />
       <TeachingTimeline
         boardTimingClips={boardClips}
@@ -456,6 +527,162 @@ function PlaybackWorkspace({
         tracks={tracks}
       />
     </>
+  );
+}
+
+function PlaybackTimingDeviationIndicator({
+  voiceDurationMs,
+  boardDurationMs,
+  deviationMs,
+  isOverflow,
+  overflowDurationMs,
+  voiceClipCount,
+  boardClipCount,
+  boardMaxEndMs,
+  voiceMaxEndMs,
+  isVoiceReady,
+}: {
+  voiceDurationMs: number;
+  boardDurationMs: number;
+  deviationMs: number | null;
+  isOverflow: boolean;
+  overflowDurationMs: number;
+  voiceClipCount: number;
+  boardClipCount: number;
+  boardMaxEndMs: number;
+  voiceMaxEndMs: number;
+  isVoiceReady: boolean;
+}) {
+  const deviationSec = deviationMs !== null ? (Math.abs(deviationMs) / 1000).toFixed(1) : null;
+  const isAligned = deviationMs !== null && Math.abs(deviationMs) <= 50;
+  const isShorter = deviationMs !== null && deviationMs < -50;
+  const cardClassName = isOverflow
+    ? 'playback-timing-indicator-card is-overflow'
+    : isAligned
+    ? 'playback-timing-indicator-card is-aligned'
+    : isShorter
+    ? 'playback-timing-indicator-card is-shorter'
+    : 'playback-timing-indicator-card';
+
+  // 计算视觉进度比例
+  const maxRefMs = Math.max(voiceDurationMs, boardDurationMs, 1000);
+  const voiceWidthPct = voiceDurationMs > 0 ? Math.min(100, (voiceDurationMs / maxRefMs) * 100) : 0;
+  const boardNormalWidthPct =
+    voiceDurationMs > 0
+      ? Math.min(voiceWidthPct, (boardDurationMs / maxRefMs) * 100)
+      : Math.min(100, (boardDurationMs / maxRefMs) * 100);
+  const overflowWidthPct =
+    voiceDurationMs > 0 ? Math.max(0, ((boardDurationMs - voiceDurationMs) / maxRefMs) * 100) : 0;
+
+  return (
+    <div className={cardClassName}>
+      <div className="timing-bar-header">
+        <Space size="middle" wrap className="timing-metrics-row">
+          <Space size="small">
+            <FieldTimeOutlined style={{ color: isOverflow ? '#ff4d4f' : '#1890ff', fontSize: 16 }} />
+            <Text strong style={{ fontSize: 13, color: isOverflow ? '#cf1322' : undefined }}>
+              时序联动指示器
+            </Text>
+          </Space>
+
+          <Tooltip title={`语音资产 (voiceAudio) 共 ${voiceClipCount} 句音频片段，为视频主时钟`}>
+            <Tag color={isVoiceReady ? 'blue' : 'default'} className="timing-badge-tag">
+              <SoundOutlined /> 语音: {(voiceDurationMs / 1000).toFixed(1)}s ({voiceClipCount} 句)
+            </Tag>
+          </Tooltip>
+
+          <Tooltip title={`当前时间轴共有 ${boardClipCount} 个板书 (board) 动作与停留片段`}>
+            <Tag color="cyan" className="timing-badge-tag">
+              ✍️ 板书: {(boardDurationMs / 1000).toFixed(1)}s ({boardClipCount} 片段)
+            </Tag>
+          </Tooltip>
+
+          {deviationMs !== null && (
+            <Tooltip
+              title={
+                isOverflow
+                  ? `板书时长超出语音主时钟 ${(deviationMs / 1000).toFixed(2)}s，超出部分无对应口播！`
+                  : isAligned
+                  ? '板书与语音总时长严格吻合'
+                  : `板书在语音结束前 ${(Math.abs(deviationMs) / 1000).toFixed(2)}s 提前完成书写，随后静态留场`
+              }
+            >
+              {isOverflow ? (
+                <Tag color="error" icon={<WarningFilled />} className="timing-badge-tag" style={{ fontWeight: 600 }}>
+                  偏差: +{deviationSec}s (时序溢出)
+                </Tag>
+              ) : isAligned ? (
+                <Tag color="success" icon={<CheckCircleFilled />} className="timing-badge-tag">
+                  偏差: ±0.0s (已对齐)
+                </Tag>
+              ) : (
+                <Tag color="processing" icon={<CheckCircleOutlined />} className="timing-badge-tag">
+                  偏差: -{deviationSec}s (留场)
+                </Tag>
+              )}
+            </Tooltip>
+          )}
+        </Space>
+
+        <Space size="small">
+          {isOverflow ? (
+            <span
+              style={{
+                color: '#cf1322',
+                fontWeight: 600,
+                fontSize: 12,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+              }}
+            >
+              <AlertOutlined /> 存在时序溢出风险
+            </span>
+          ) : isVoiceReady ? (
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              音频主时钟运转正常
+            </Text>
+          ) : (
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              等待生成语音音频
+            </Text>
+          )}
+        </Space>
+      </div>
+
+      {/* 视觉对比比例条 */}
+      {voiceDurationMs > 0 && (
+        <div
+          className="timing-progress-strip"
+          title={`语音: ${(voiceDurationMs / 1000).toFixed(1)}s / 板书: ${(boardDurationMs / 1000).toFixed(1)}s`}
+        >
+          <div className="timing-progress-fill-board" style={{ width: `${boardNormalWidthPct}%` }} />
+          {overflowWidthPct > 0 && (
+            <div className="timing-progress-fill-overflow" style={{ width: `${overflowWidthPct}%` }} />
+          )}
+        </div>
+      )}
+
+      {/* 出现时序溢出时的醒目提示 Banner */}
+      {isOverflow && (
+        <div className="timing-overflow-alert-box">
+          <span className="overflow-tag-badge">时序溢出警告</span>
+          <div className="overflow-message-content">
+            <strong>
+              ⚠️ 检测到 timeline 板书总时长超出语音 (voiceAudio) 资产 +{(overflowDurationMs / 1000).toFixed(1)}s！
+            </strong>
+            {boardMaxEndMs > voiceMaxEndMs && (
+              <span style={{ marginLeft: 6 }}>
+                （最晚板书在 {(boardMaxEndMs / 1000).toFixed(1)}s 结束，超出语音终点 {(voiceMaxEndMs / 1000).toFixed(1)}s）
+              </span>
+            )}
+            <div style={{ marginTop: 2, fontSize: 12, opacity: 0.95 }}>
+              微课生成规范中以 A 轨语音为主时钟。板书超时会导致画面静止或播放延后，请在下方时间轴微调板书片段的起止时间或书写速度。
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
