@@ -13,8 +13,9 @@ export const CANVAS_SIZE = { width: 1726, height: 980, unit: 'px', origin: '左�
 export const COORDINATE_SYSTEM = '百分比坐标 0-100'
 export const QUESTION_FONT_SIZE = 30
 export const QUESTION_LINE_HEIGHT = 1.65
-export const BOARD_FONT_SIZE = 35
-export const BOARD_FONT_RATIO_TEXT = '约题目的1.2~1.5倍，推荐35px'
+export const BOARD_FONT_SIZE = 45
+export const BOARD_FONT_SIZE_COMPACT = 36
+export const BOARD_FONT_RATIO_TEXT = '严格为题目的1.2~1.5倍（多列步骤36px，标准/分析/答案45px）'
 export const HANDWRITING_FAMILY = 'LikeJianJianTi'
 export const HANDWRITING_CSS_HREF = 'https://fontsapi.zeoseven.com/490/main/result.css'
 

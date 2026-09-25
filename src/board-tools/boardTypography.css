@@ -123,3 +123,98 @@
   padding-right: 2px;
 }
 
+/* ==========================================================================
+   人性化自然手写与排版规范（学习 lecture.html 与真实教师板书温度）
+   1. 行与行之间保持自然文本段落换行间距（margin-bottom 呼吸感）
+   2. 整行轻微倾斜与自然上扬（transform-origin: left center）
+   3. 逐字微位移与轻微旋转（微微感，绝非机械整齐）
+   4. 5.1 规则：分数/上下标只缩放字号，绝不单独切 font-family，完全继承手写体
+   ========================================================================== */
+
+.board-line {
+  display: block;
+  transform-origin: left center;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  line-height: 1.55;
+  transition: transform 0.15s ease-out;
+}
+
+.board-line:last-child {
+  margin-bottom: 0 !important;
+}
+
+/* 手写单个字符：支持微位移微旋转 */
+.char {
+  display: inline-block;
+  transform-origin: center center;
+  will-change: transform;
+}
+
+/* 字间空格呼吸感 */
+.char-space {
+  display: inline-block;
+  width: 0.28em;
+}
+
+/* 分子分母内子字符 */
+.char-frac-sub {
+  display: inline-block;
+}
+
+/* 分数 5.1 规则：分数只缩放字号，绝不切字体 */
+.frac {
+  display: inline-flex;
+  flex-direction: column;
+  text-align: center;
+  vertical-align: middle;
+  margin: 0 0.14em;
+  line-height: 1.05;
+  font-family: inherit;
+}
+
+.frac > .num {
+  display: block;
+  border-bottom: 1.5px solid currentColor;
+  padding: 0 0.18em;
+  font-size: 0.85em;
+  line-height: 1.05;
+  font-family: inherit;
+  white-space: nowrap;
+}
+
+.frac > .den {
+  display: block;
+  padding: 0 0.18em;
+  font-size: 0.85em;
+  line-height: 1.05;
+  font-family: inherit;
+  white-space: nowrap;
+}
+
+.sup {
+  font-size: 0.64em !important;
+  vertical-align: super !important;
+  line-height: 0 !important;
+  font-family: inherit !important;
+  margin-left: 0.06em;
+}
+
+.sub {
+  font-size: 0.64em !important;
+  vertical-align: sub !important;
+  line-height: 0 !important;
+  font-family: inherit !important;
+  margin-left: 0.06em;
+}
+
+/* C 档墨迹微扰滤镜（feTurbulence + feDisplacementMap） */
+.mode-c .board,
+.mode-c .board-text-anchor,
+.handwrite-mode-c .board-text-anchor,
+.ink-warp-active .board-text-anchor {
+  filter: url(#ink-warp);
+}
+
+

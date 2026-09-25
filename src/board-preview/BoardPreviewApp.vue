@@ -106,6 +106,7 @@ const actionSpec = computed(() => rows.value.flatMap((row, rowIndex) => (
 const showGrid = ref(params.get('showGrid') === '1')
 const showLabels = ref(params.get('showLabels') !== '0')
 const showZones = ref(params.get('showZones') !== '0')
+const maskStyle = ref('natural')
 const activeTab = ref('rows')
 const selectedStageFilter = ref('all')
 
@@ -699,6 +700,14 @@ function getStageTagColor(stage) {
           <input type="checkbox" v-model="showZones" />
           <span>分区辅助线</span>
         </label>
+        <div class="mask-style-select-chip" title="切换板书逐行揭开遮罩风格（学习 cs-board 自然手写排版）">
+          <span class="mask-chip-label">遮罩:</span>
+          <select v-model="maskStyle" class="mask-chip-select">
+            <option value="natural">🌿 自然墨水</option>
+            <option value="soft">☁️ 柔和渐隐</option>
+            <option value="sharp">📐 锐利边缘</option>
+          </select>
+        </div>
       </div>
 
       <div class="nav-right-actions">
@@ -761,6 +770,7 @@ function getStageTagColor(stage) {
             :action-spec="actionSpec"
             :interactive="false"
             :active-step-index="activeStepIndex"
+            :mask-style="maskStyle"
             @step-change="activeStepIndex = $event"
             @update:topic-layout="onTopicLayoutUpdated"
             @update:problem-text="onProblemTextUpdated"
@@ -1199,6 +1209,37 @@ function getStageTagColor(stage) {
 
 .toggle-chip input {
   cursor: pointer;
+}
+
+.mask-style-select-chip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #334155;
+  border-left: 1px solid #cbd5e1;
+  padding-left: 8px;
+}
+
+.mask-chip-label {
+  font-size: 11px;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.mask-chip-select {
+  font-size: 11px;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  padding: 1px 4px;
+  color: #1e293b;
+  cursor: pointer;
+  outline: none;
+}
+
+.mask-chip-select:focus {
+  border-color: #0d9488;
 }
 
 .nav-right-actions {
