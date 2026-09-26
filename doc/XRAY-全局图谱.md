@@ -323,7 +323,7 @@ graph TD
 | 行数 | `contract.js:304` | 0 行 | 拒绝 |
 | 口播分数 | `speechTiming.js:38/43` | 出现 `/` 或中文"分之" | throw（逐行） |
 | 口播 KaTeX | `speechTiming.js:51` | 含 `\frac`/`$` | throw |
-| 口播 x | `speechTiming.js:54` | 含 `x/X/×` | throw（未知数=艾克斯，乘号=乘以） |
+| 口播 x | `speechTiming.js:54` | 含 `x/X/×` | throw（未知数=X，乘号=乘以） |
 | 口播小数 | `speechTiming.js:65/68/71` | `3.14` 未转"三点一四" | throw |
 | 板书分数 | `boardMathPolicy.js:5` | 斜杠分数 / 口播式分数 / `\text{中文}` | hardFail 时 throw |
 | actionSpec | `agentBActionSpec.js:22` | 缺 cueText / 非 speech 子串 / action 与 gap 同存或同无 / order 重复 | throw |

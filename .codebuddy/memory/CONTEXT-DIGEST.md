@@ -44,7 +44,7 @@
 - A Agent B：五字段、**板书不输出起手坐标**、不算时长只给 `startDelay`、单手串行 `order` 递增。
 - B Contract：容错吸附 + 兜底，脏数据不流下游（坐标算法已下线）。
 - C 工具：4 个白名单工具；`rough-notation` 必须 `target.exactText` 锚定真文；`rough-line/arrow` 走 region 内坐标、受 region 限位。
-- D 口播：分数念分母分之分子；x→艾克斯、行→航数；严禁 LaTeX/Markdown 进 TTS。
+- D 口播：分数念分母分之分子；x→X、行→航数；严禁 LaTeX/Markdown 进 TTS。
 - E 渲染：手稿感/微斜/抖动/速度扰动**全归渲染层**，禁塞给模型算。
 - F Check：松门槛，不卡死解法多样性。
 

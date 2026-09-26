@@ -207,7 +207,7 @@ export function convertParentheses(text) {
  * 转换四则运算符号与未知数 x
  * 必须遵循严格顺序：
  * 先替换乘法（两数或括号之间的乘号、×、*）
- * 再替换未知数 x（如 8x -> 8艾克斯，设x为 -> 设艾克斯为）
+ * 再替换未知数 x（如 8x -> 8X，设x为 -> 设X为）
  */
 export function convertArithmeticAndVariables(text) {
   if (!text) return ''
@@ -228,13 +228,13 @@ export function convertArithmeticAndVariables(text) {
   res = res.replace(/(\d+)\s*乘\s*(\d+)/g, '$1乘以$2')
 
   // 3. 识别代数未知数 x：
-  // 3.1 紧跟在数字后面的未知数，如 8x -> 8个x 或 8艾克斯（在小学代数中读 8个艾克斯 或 8艾克斯）
-  res = res.replace(/(\d+)\s*x(?![a-zA-Z0-9])/gi, '$1艾克斯')
+  // 3.1 紧跟在数字后面的未知数，如 8x -> 8个x 或 8X（在小学代数中读 8个X 或 8X）
+  res = res.replace(/(\d+)\s*x(?![a-zA-Z0-9])/gi, '$1X')
   // 3.2 独立未知数 x: "设 x", "x =", "x >", "求 x", "把 x", "x 是"
-  res = res.replace(/(?<=[设让求把有是\s\(（])x(?=[为是等于\s\+\-\*\/÷=><≥≤，。！？、\)）])/gi, '艾克斯')
-  res = res.replace(/\bx\s*([=><≥≤])/gi, '艾克斯$1')
-  res = res.replace(/\bx\s*(加|减|乘以|除以)/gi, '艾克斯$1')
-  res = res.replace(/(加|减|乘以|除以)\s*x\b/gi, '$1艾克斯')
+  res = res.replace(/(?<=[设让求把有是\s\(（])x(?=[为是等于\s\+\-\*\/÷=><≥≤，。！？、\)）])/gi, 'X')
+  res = res.replace(/\bx\s*([=><≥≤])/gi, 'X$1')
+  res = res.replace(/\bx\s*(加|减|乘以|除以)/gi, 'X$1')
+  res = res.replace(/(加|减|乘以|除以)\s*x\b/gi, '$1X')
 
   // 4. 除号转换：÷, \div
   res = res.replace(/\\div|÷/g, '除以')
